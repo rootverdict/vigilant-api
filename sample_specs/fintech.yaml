@@ -1,0 +1,124 @@
+openapi: "3.0.3"
+info:
+  title: FinTech Mock API (Vulnerable — for Vigilant-API testing)
+  version: "1.0.0"
+
+servers:
+  - url: http://localhost:5000
+
+paths:
+
+  /transactions/{id}:
+    get:
+      summary: Get a transaction by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      security:
+        - BearerAuth: []
+
+  /profile/{user_id}:
+    get:
+      summary: Get user profile
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      security:
+        - BearerAuth: []
+
+  /fetch:
+    get:
+      summary: Server-side URL fetch (SSRF vulnerable)
+      parameters:
+        - name: url
+          in: query
+          required: true
+          schema:
+            type: string
+      security:
+        - BearerAuth: []
+
+  /transfer:
+    post:
+      summary: Transfer funds between accounts
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                from_account_id: { type: integer }
+                to_account_id:   { type: integer }
+                amount:          { type: number }
+      security:
+        - BearerAuth: []
+
+  /export:
+    get:
+      summary: Export transaction data (parameter pollution vulnerable)
+      parameters:
+        - name: id
+          in: query
+          required: true
+          schema:
+            type: integer
+      security:
+        - BearerAuth: []
+
+  /resource/{ref}:
+    get:
+      summary: Get resource by indirect reference (base64/hex/int — indirect reference vulnerable)
+      parameters:
+        - name: ref
+          in: path
+          required: true
+          schema:
+            type: string
+      security:
+        - BearerAuth: []
+
+  /user/update:
+    post:
+      summary: Update user profile (mass assignment vulnerable)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      security:
+        - BearerAuth: []
+    put:
+      summary: Update user profile PUT (mass assignment vulnerable)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      security:
+        - BearerAuth: []
+    patch:
+      summary: Update user profile PATCH (mass assignment vulnerable)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      security:
+        - BearerAuth: []
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
