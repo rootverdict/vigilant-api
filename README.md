@@ -582,8 +582,8 @@ Add the URL to the appropriate list constant in `SSRFDetector`:
 
 ## License
 
-MIT
+[MIT](./LICENSE) · Built as part of a 32-Week AppSec Roadmap · Author: [rootverdict](https://github.com/rootverdict)
 
 ---
 
-*Vigilant-API v1.0 · rootverdict · 32-Week AppSec Roadmap*
+*Vigilant-API v1.0*
