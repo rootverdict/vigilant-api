@@ -70,15 +70,23 @@ class BOLADetector:
         Returns a list of finding dicts (may be empty if nothing found).
         """
         findings = []
+        body_method = method in ('POST', 'PUT', 'PATCH')
 
         for rid in resource_ids:
             findings += self._simple_idor(method, path, rid)
             findings += self._param_pollution(path, rid)
-            findings += self._body_idor(path, rid)
-            findings += self._indirect_reference(method, path, rid)
+            if body_method:
+                findings += self._body_idor(path, rid)
 
-        # Mass assignment is per-endpoint, not per-ID
-        findings += self._mass_assignment(path)
+        # Indirect reference only needs one ID — if the server accepts encoded
+        # references at all it will show on the first ID. Testing all 5 IDs
+        # adds 20 extra requests per endpoint with zero additional insight.
+        if resource_ids:
+            findings += self._indirect_reference(method, path, resource_ids[0])
+
+        # Body-only checks — only run on endpoints that accept a request body
+        if body_method:
+            findings += self._mass_assignment(path)
 
         return findings
 
@@ -206,17 +214,20 @@ class BOLADetector:
                     print(f'      [BOLA] Body IDOR  {http_method} {url}  payload={payload}')
                 resp = self._request(http_method, url, attacker['token'], json=payload)
                 if resp and resp.status_code in (200, 201) and resp.content:
-                    findings.append(self._make_finding(
-                        check='Body IDOR',
-                        path=path,
-                        resource_id=resource_id,
-                        owner='victim',
-                        unauthorized_user=attacker['name'],
-                        status=resp.status_code,
-                        body_preview=str(self._safe_json(resp))[:300],
-                        severity='HIGH',
-                    ))
-                    return findings   # one finding per endpoint is enough
+                    body = self._safe_json(resp)
+                    # Only flag if body contains real data, not a generic success/error message
+                    if body and not self._is_error_body(body):
+                        findings.append(self._make_finding(
+                            check='Body IDOR',
+                            path=path,
+                            resource_id=resource_id,
+                            owner='victim',
+                            unauthorized_user=attacker['name'],
+                            status=resp.status_code,
+                            body_preview=str(body)[:300],
+                            severity='HIGH',
+                        ))
+                        return findings   # one finding per endpoint is enough
 
         return findings
 
@@ -370,8 +381,8 @@ class BOLADetector:
     # ------------------------------------------------------------------ #
 
     def _build_url(self, path: str, resource_id: int) -> str:
-        """Replace ALL {*id*} placeholders in path with resource_id."""
-        resolved = re.sub(r'\{[^}]*id[^}]*\}', str(resource_id), path, flags=re.IGNORECASE)
+        """Replace ALL {param} placeholders in path with resource_id."""
+        resolved = re.sub(r'\{[^}]+\}', str(resource_id), path)
         return f'{self.base_url}{resolved}'
 
     def _strip_path_params(self, path: str) -> str:

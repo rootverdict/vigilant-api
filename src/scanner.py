@@ -230,7 +230,7 @@ class Scanner:
         print(f'\n{Fore.CYAN}{"="*60}')
         print(f'  Scan Complete — {total} finding(s)')
         print(f'  CRITICAL: {summary["CRITICAL"]}  HIGH: {summary["HIGH"]}  '
-              f'MEDIUM: {summary["MEDIUM"]}  LOW: {summary["LOW"]}')
+              f'MEDIUM: {summary["MEDIUM"]}  LOW: {summary["LOW"]}  INFO: {summary["INFO"]}')
         print(f'\n  JSON report : {json_path}')
         print(f'  HTML report : {html_path}')
         print(f'{"="*60}{Style.RESET_ALL}\n')

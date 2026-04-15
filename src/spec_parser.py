@@ -11,11 +11,19 @@ import json
 
 class OpenAPIParser:
     def __init__(self, spec_file: str):
-        with open(spec_file, encoding='utf-8') as f:
-            if spec_file.endswith(('.yaml', '.yml')):
-                self.spec = yaml.safe_load(f)
-            else:
-                self.spec = json.load(f)
+        try:
+            with open(spec_file, encoding='utf-8') as f:
+                if spec_file.endswith(('.yaml', '.yml')):
+                    self.spec = yaml.safe_load(f)
+                else:
+                    self.spec = json.load(f)
+        except yaml.YAMLError as e:
+            raise ValueError(f'[ERROR] Failed to parse YAML spec file "{spec_file}": {e}')
+        except json.JSONDecodeError as e:
+            raise ValueError(f'[ERROR] Failed to parse JSON spec file "{spec_file}": {e}')
+
+        if not isinstance(self.spec, dict):
+            raise ValueError(f'[ERROR] Spec file "{spec_file}" is empty or not a valid OpenAPI document.')
 
         self.base_url = self._extract_base_url()
 

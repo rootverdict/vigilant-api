@@ -372,7 +372,7 @@ reports/
 
 ============================================================
   Scan Complete — 3 finding(s)
-  CRITICAL: 0  HIGH: 2  MEDIUM: 1  LOW: 0
+  CRITICAL: 0  HIGH: 2  MEDIUM: 1  LOW: 0  INFO: 0
 
   JSON report : reports/report.json
   HTML report : reports/report.html
@@ -411,7 +411,7 @@ python cli.py \
   --tokens sample_specs/dummyjson_tokens.json \
   --skip ssrf \
   --delay 0.5 \
-  --ids 1,2,3,4,5
+  --ids 1,2,3
 ```
 
 `--skip ssrf` is recommended for external APIs you don't own — SSRF probes inject metadata URLs which are irrelevant to dummyjson and just add noise. `--delay 0.5` prevents rate-limiting.
@@ -421,7 +421,7 @@ python cli.py \
 - **JWT algorithm findings** — all three dummyjson tokens use `HS256` → 3 x MEDIUM findings
 - **Simple IDOR findings** — dummyjson returns any user's data to any authenticated token → multiple HIGH findings across `/users/{id}`, `/posts/{id}`, `/carts/{id}`, `/todos/{id}`
 - **Body IDOR / Mass Assignment** — DummyJSON echoes back PUT body fields, which will trigger findings
-- **Estimated runtime** — 5-8 minutes with `--delay 0.5`
+- **Estimated runtime** — 3-5 minutes with `--delay 0.5 --ids 1,2,3`
 
 ---
 
@@ -572,7 +572,7 @@ Add the URL to the appropriate list constant in `SSRFDetector`:
 ## Limitations (V1)
 
 - No support for GraphQL or gRPC APIs (REST/OpenAPI only)
-- UUID-style path params not automatically detected for BOLA (only params containing "id")
+- BOLA checks rely on the spec having path/query parameters declared — undocumented parameters are not discovered
 - OAuth checks require a reachable authorization server
 - Blind SSRF confirmation requires an external out-of-band listener (Burp Collaborator, ngrok, interactsh)
 - No built-in support for multi-step flows or stateful test sequences
