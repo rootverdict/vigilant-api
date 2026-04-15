@@ -195,6 +195,7 @@ vigilant-api/
 └── sample_specs/
     ├── fintech.yaml              # OpenAPI 3.0.3 test spec for mock server (9 endpoints)
     ├── tokens.json               # Three mock server test tokens (alice, bob, admin)
+    ├── oauth_config.json         # OAuth config pointing at mock server OAuth endpoints
     ├── dummyjson.yaml            # OpenAPI spec for dummyjson.com (real external API)
     └── dummyjson_tokens.json     # JWT tokens for dummyjson.com (expire after 60 min)
 ```
@@ -258,13 +259,27 @@ Options:
   --insecure               Disable TLS certificate verification
   --proxy          URL      HTTP proxy for all requests (e.g. Burp Suite)
   --verbose                Print every request URL and payload
+  --version / -V           Show version and exit
 ```
 
 ### Common scan recipes
 
 ```bash
-# Basic scan — all checks, default IDs
-python cli.py --spec sample_specs/fintech.yaml --tokens sample_specs/tokens.json
+# Full scan — all 3 categories (30 findings on mock server)
+python cli.py --spec sample_specs/fintech.yaml --tokens sample_specs/tokens.json \
+  --oauth-config sample_specs/oauth_config.json
+
+# BOLA only — skip SSRF and OAuth
+python cli.py --spec sample_specs/fintech.yaml --tokens sample_specs/tokens.json \
+  --skip ssrf --skip oauth
+
+# SSRF only — skip BOLA and OAuth
+python cli.py --spec sample_specs/fintech.yaml --tokens sample_specs/tokens.json \
+  --skip bola --skip oauth
+
+# OAuth only — skip BOLA and SSRF
+python cli.py --spec sample_specs/fintech.yaml --tokens sample_specs/tokens.json \
+  --skip bola --skip ssrf --oauth-config sample_specs/oauth_config.json
 
 # Verbose mode — see every request being made
 python cli.py --spec sample_specs/fintech.yaml --tokens sample_specs/tokens.json --verbose
@@ -283,22 +298,16 @@ python cli.py --spec sample_specs/fintech.yaml --tokens sample_specs/tokens.json
 # Self-signed TLS target
 python cli.py --spec sample_specs/fintech.yaml --tokens sample_specs/tokens.json --insecure
 
-# Skip OAuth checks (no OAuth server available)
-python cli.py --spec sample_specs/fintech.yaml --tokens sample_specs/tokens.json --skip oauth
-
-# BOLA only — skip everything else
-python cli.py --spec sample_specs/fintech.yaml --tokens sample_specs/tokens.json \
-  --skip ssrf --skip oauth
-
 # Custom resource IDs and output directory
 python cli.py --spec sample_specs/fintech.yaml --tokens sample_specs/tokens.json \
   --ids 1,2,3,10,50,99 --output my_pentest_reports
 
 # Full scan with all options
 python cli.py --spec sample_specs/fintech.yaml --tokens sample_specs/tokens.json \
+  --oauth-config sample_specs/oauth_config.json \
   --delay 0.3 --proxy http://127.0.0.1:8080 \
   --callback https://YOUR_ID.burpcollaborator.net \
-  --oauth-config oauth.json --verbose --output reports
+  --verbose --output reports
 ```
 
 ---
@@ -321,7 +330,21 @@ At minimum two users are required for differential testing. The first user is tr
 
 ## OAuth Config File Format
 
-Required only when using `--oauth-config`. Example `oauth.json`:
+Required only when using `--oauth-config`.
+
+**Local mock server** (use `sample_specs/oauth_config.json` — works out of the box):
+
+```json
+{
+  "auth_url":      "http://localhost:5000/oauth/authorize",
+  "token_url":     "http://localhost:5000/oauth/token",
+  "client_id":     "vigilant-test-client",
+  "client_secret": "vigilant-test-secret",
+  "redirect_uri":  "http://localhost:5000/callback"
+}
+```
+
+**Real OAuth server** (point at your own auth server):
 
 ```json
 {
@@ -410,7 +433,7 @@ python cli.py \
   --spec sample_specs/dummyjson.yaml \
   --tokens sample_specs/dummyjson_tokens.json \
   --skip ssrf \
-  --delay 0.5 \
+  --delay 0.2 \
   --ids 1,2,3
 ```
 
@@ -421,7 +444,7 @@ python cli.py \
 - **JWT algorithm findings** — all three dummyjson tokens use `HS256` → 3 x MEDIUM findings
 - **Simple IDOR findings** — dummyjson returns any user's data to any authenticated token → multiple HIGH findings across `/users/{id}`, `/posts/{id}`, `/carts/{id}`, `/todos/{id}`
 - **Body IDOR / Mass Assignment** — DummyJSON echoes back PUT body fields, which will trigger findings
-- **Estimated runtime** — 3-5 minutes with `--delay 0.5 --ids 1,2,3`
+- **Estimated runtime** — 2-4 minutes with `--delay 0.2 --ids 1,2,3` (varies with dummyjson.com server load)
 
 ---
 
@@ -435,11 +458,13 @@ Run `python mock_server/app.py` to start a local vulnerable server on port 5000.
 |--------|------|--------------|----------------|
 | GET | `/transactions/{id}` | No ownership check — any token reads any record | Simple IDOR |
 | GET | `/profile/{user_id}` | No ownership check — leaks any user profile | Simple IDOR |
-| GET | `/fetch?url=` | Fetches any URL without allowlist | Basic SSRF |
+| GET | `/fetch?url=` | Fetches any URL without allowlist — simulates cloud metadata response | Basic SSRF, SSRF via Redirect, Partial SSRF |
 | POST | `/transfer` | Accepts any `from_account_id` without verifying ownership | Body IDOR |
 | GET | `/export?id=` | Uses last `id` value when duplicated | Parameter Pollution |
 | GET | `/resource/<ref>` | Decodes base64/hex/int ID with no ownership check | Indirect Reference |
-| POST/PUT/PATCH | `/user/update` | Merges all request fields including privileged ones | Mass Assignment |
+| POST/PUT/PATCH | `/user/update` | Merges all request fields including privileged ones | Mass Assignment, Body IDOR |
+| GET | `/oauth/authorize` | Issues auth code without `state` — accepts any `redirect_uri` | Missing state, Open redirect |
+| POST | `/oauth/token` | Grants excess scope, accepts reused codes, leaks token in URL redirect | Scope bypass, Code reuse, Token leakage |
 
 ### Secure endpoints (for comparison)
 

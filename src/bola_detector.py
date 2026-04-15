@@ -71,17 +71,22 @@ class BOLADetector:
         """
         findings = []
         body_method = method in ('POST', 'PUT', 'PATCH')
+        body_idor_found = False   # stop retrying body IDOR after first hit
 
         for rid in resource_ids:
             findings += self._simple_idor(method, path, rid)
-            findings += self._param_pollution(path, rid)
-            if body_method:
-                findings += self._body_idor(path, rid)
+            findings += self._param_pollution(method, path, rid)
+            if body_method and not body_idor_found:
+                new = self._body_idor(path, rid)
+                findings += new
+                if new:
+                    body_idor_found = True   # skip remaining rids for body IDOR
 
-        # Indirect reference only needs one ID — if the server accepts encoded
-        # references at all it will show on the first ID. Testing all 5 IDs
-        # adds 20 extra requests per endpoint with zero additional insight.
-        if resource_ids:
+        # Indirect reference only applies to paths that have a {param} to encode.
+        # Without a placeholder, re.sub has nothing to replace — the URL stays
+        # identical across all encodings, so all 5 requests go to the same
+        # endpoint with no useful test being performed.
+        if resource_ids and '{' in path:
             findings += self._indirect_reference(method, path, resource_ids[0])
 
         # Body-only checks — only run on endpoints that accept a request body
@@ -103,11 +108,13 @@ class BOLADetector:
         responses = {}
 
         # Step 1 – collect each user's response
+        # Send empty JSON body for POST/PUT/PATCH so Flask doesn't return 415
+        body_kwargs = {'json': {}} if method in ('POST', 'PUT', 'PATCH') else {}
         for user in self.users:
             url  = self._build_url(path, resource_id)
             if self.verbose:
                 print(f'      [BOLA] Simple IDOR  user={user["name"]}  url={url}')
-            resp = self._request(method, url, user['token'])
+            resp = self._request(method, url, user['token'], **body_kwargs)
             responses[user['name']] = {
                 'status': resp.status_code if resp else None,
                 'body':   self._safe_json(resp),
@@ -120,31 +127,52 @@ class BOLADetector:
 
         for user in self.users[1:]:
             ur = responses[user['name']]
-            if (
+            if not (
                 ur['status'] in (200, 201)
                 and ur['body']
                 and self._bodies_similar(ur['body'], owner_resp['body'])
             ):
-                findings.append(self._make_finding(
-                    check='Simple IDOR',
-                    path=path,
-                    resource_id=resource_id,
-                    owner=owner['name'],
-                    unauthorized_user=user['name'],
-                    status=ur['status'],
-                    body_preview=str(ur['body'])[:300],
-                    severity='HIGH',
-                ))
+                continue
+
+            # Skip if this user is reading their own resource.
+            # Heuristic: if the user's own user_id appears as an integer value
+            # in the response body, the resource likely belongs to them.
+            # e.g. bob (user_id=2) reading /profile/2 → body has user_id:2 → skip.
+            # Uses isinstance(v, int) to avoid float amounts (e.g. $2.00) matching
+            # user_id=2 and causing false negatives.
+            own_id = user.get('user_id')
+            if own_id and isinstance(ur['body'], dict):
+                if any(isinstance(v, int) and v == own_id
+                       for v in ur['body'].values()):
+                    continue   # user is reading their own data — not an IDOR
+
+            findings.append(self._make_finding(
+                check='Simple IDOR',
+                path=path,
+                resource_id=resource_id,
+                owner=owner['name'],
+                unauthorized_user=user['name'],
+                status=ur['status'],
+                body_preview=str(ur['body'])[:300],
+                severity='HIGH',
+            ))
 
         return findings
 
-    def _param_pollution(self, path: str, resource_id: int) -> list:
+    def _param_pollution(self, method: str, path: str, resource_id: int) -> list:
         """
         HTTP Parameter Pollution: send two values for the same id param.
         Some servers use the first, some use the last → may bypass auth.
 
         e.g. GET /transactions?id=1&id=2
+
+        Only meaningful for GET endpoints — POST/PUT/PATCH ignore query-string
+        id params in favour of the request body, so we skip them to avoid
+        wasting requests that always return 405.
         """
+        if method not in ('GET', 'DELETE'):
+            return []   # query-string pollution irrelevant for body-method endpoints
+
         findings = []
         victim_id = resource_id
         attacker  = self.users[-1]
@@ -156,7 +184,7 @@ class BOLADetector:
             url  = f'{self.base_url}{self._strip_path_params(path)}?{params}'
             if self.verbose:
                 print(f'      [BOLA] Param Pollution  url={url}')
-            resp = self._request('GET', url, attacker['token'])
+            resp = self._request(method, url, attacker['token'])
 
             if resp and resp.status_code == 200 and resp.content:
                 findings.append(self._make_finding(
@@ -421,20 +449,68 @@ class BOLADetector:
 
     def _bodies_similar(self, b1, b2) -> bool:
         """
-        Fuzzy comparison: checks if two response bodies share top-level keys
-        and therefore represent the same type of resource.
-        Avoids false positives from generic error messages.
+        Fuzzy comparison: two bodies represent the *same resource instance*
+        (not just the same resource type).
+
+        Strategy:
+          1. Both must be dicts with 2+ overlapping non-error keys → same schema
+          2. At least one ID-field value must be equal → same object, not just
+             two users each getting their own record back.
+
+        This prevents false positives on endpoints like /user/update where both
+        users legitimately get 200 but each receives their own distinct record
+        (different user_id, different name).  An actual IDOR would return the
+        *owner's* resource_id in the attacker's response.
         """
         if not isinstance(b1, dict) or not isinstance(b2, dict):
             return False
         shared_keys = set(b1.keys()) & set(b2.keys())
         error_indicators = {'error', 'detail', 'message'}
-        if shared_keys - error_indicators:
-            return len(shared_keys) >= 2
-        return False
+        real_keys = shared_keys - error_indicators
+        if len(real_keys) < 2:
+            return False
+
+        # Prefer checking ID-like fields — if they share the same value, the
+        # attacker received the same resource the owner has (IDOR confirmed).
+        id_keys = {k for k in real_keys if 'id' in k.lower()}
+        if id_keys:
+            return any(b1[k] == b2[k] for k in id_keys)
+
+        # No explicit ID field — fall back to counting matching non-trivial values.
+        # Excludes booleans/None which are too common to signal same-object.
+        trivial = {None, '', True, False}
+        matching = sum(
+            1 for k in real_keys
+            if b1.get(k) == b2.get(k) and b1.get(k) not in trivial
+        )
+        return matching >= 2
+
+    # Per-check human-readable descriptions used in the report
+    _CHECK_DESCRIPTIONS = {
+        'Simple IDOR': (
+            'User "{attacker}" accessed resource ID {rid} without any ownership check. '
+            'The server returned the full object to any authenticated user '
+            'who guessed or enumerated the numeric ID.'
+        ),
+        'Body IDOR': (
+            'User "{attacker}" injected another user\'s resource ID ({rid}) into a request '
+            'body field and the server acted on it without verifying ownership. '
+            'The attacker controlled which account or object was read or mutated.'
+        ),
+        'Parameter Pollution IDOR': (
+            'Sending duplicate "id" query parameters (e.g. ?id=<attacker>&id={rid}) caused '
+            'the server to process the last (or first) value and return resource ID {rid} to '
+            'user "{attacker}" without an ownership check.'
+        ),
+    }
 
     def _make_finding(self, check, path, resource_id, owner,
                       unauthorized_user, status, body_preview, severity) -> dict:
+        template = self._CHECK_DESCRIPTIONS.get(check, '')
+        description = template.format(
+            attacker=unauthorized_user, rid=resource_id, owner=owner
+        ) if template else ''
+
         return {
             'type':              'BOLA/IDOR',
             'check':             check,
@@ -448,6 +524,7 @@ class BOLADetector:
                 'status_code':  status,
                 'body_preview': body_preview,
             },
+            'description': description,
             'remediation': (
                 'Enforce object-level authorization on every request. '
                 'Verify that the authenticated user owns (or is explicitly permitted to access) '

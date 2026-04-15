@@ -44,8 +44,8 @@ class OpenAPIParser:
             if not isinstance(path_item, dict):
                 continue
 
-            path_params = path_item.get('parameters', [])
-            path_security = path_item.get('security', [])
+            path_params   = path_item.get('parameters') or []
+            path_security = path_item.get('security')   or []
 
             for method, details in path_item.items():
                 if method.lower() not in ('get', 'post', 'put', 'delete', 'patch'):
@@ -100,7 +100,9 @@ class OpenAPIParser:
         params = []
         seen = set()
 
-        for param in list(path_params or []) + list(details.get('parameters', [])):
+        # `or []` guards against `parameters: null` in the YAML spec — without
+        # it, `list(None)` raises TypeError and aborts the entire scan.
+        for param in list(path_params or []) + list(details.get('parameters') or []):
             name = param.get('name')
             location = param.get('in')
             if not name or not location:

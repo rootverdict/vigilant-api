@@ -115,6 +115,25 @@ class Scanner:
         self._print_banner(target, len(endpoints))
 
         # ── Scan each endpoint ─────────────────────────────────────────
+        # Deduplication: track (endpoint, check, resource_id, attacker/param) tuples
+        # already reported.  This prevents the same vulnerability from being logged
+        # multiple times when a path has several HTTP methods (e.g. POST + PUT + PATCH
+        # on /user/update each independently trigger Body IDOR and Mass Assignment).
+        _seen_findings: set = set()
+
+        def _log_unique(finding: dict):
+            """Log finding only if not a duplicate. Returns filepath or None."""
+            key = (
+                finding.get('endpoint'),
+                finding.get('check'),
+                finding.get('resource_id'),
+                finding.get('unauthorized_user') or finding.get('parameter'),
+            )
+            if key in _seen_findings:
+                return None
+            _seen_findings.add(key)
+            return self.logger.log_finding(finding)
+
         for method, path, params, security in endpoints:
             self._print_endpoint(method, path)
 
@@ -135,8 +154,9 @@ class Scanner:
                 if any_path_params or has_body or has_query_id:
                     findings = self.bola.test_endpoint(method, path, self.resource_ids)
                     for f in findings:
-                        fp = self.logger.log_finding(f)
-                        self._print_finding(f, fp)
+                        fp = _log_unique(f)
+                        if fp:
+                            self._print_finding(f, fp)
 
             # --- SSRF ---
             if 'ssrf' not in self.skip:
@@ -149,8 +169,9 @@ class Scanner:
                     full_url = f'{target}{resolved_path}'
                     findings = self.ssrf.test_endpoint(method, full_url, url_params, token)
                     for f in findings:
-                        fp = self.logger.log_finding(f)
-                        self._print_finding(f, fp)
+                        fp = _log_unique(f)
+                        if fp:
+                            self._print_finding(f, fp)
 
         # ── OAuth checks (endpoint-agnostic) ──────────────────────────
         if 'oauth' not in self.skip:

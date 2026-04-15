@@ -17,6 +17,7 @@ All findings include the payload used and a body preview as forensic evidence.
 import re
 import time
 import requests
+from urllib.parse import quote as _urlquote
 
 
 class SSRFDetector:
@@ -240,8 +241,14 @@ class SSRFDetector:
         try:
             if param_in in ('query', 'path'):
                 sep = '&' if '?' in url else '?'
+                # URL-encode the payload so characters like #, &, = inside it
+                # are treated as literal data, not URL syntax.  Without this,
+                # a '#' in a bypass payload (e.g. http://trusted.com#@evil.com)
+                # is interpreted as a fragment separator and everything after it
+                # is silently stripped before the request is sent.
+                encoded_payload = _urlquote(payload, safe='')
                 resp = requests.request(
-                    method, f'{url}{sep}{param_name}={payload}',
+                    method, f'{url}{sep}{param_name}={encoded_payload}',
                     headers=headers, timeout=8, allow_redirects=True,
                     verify=self.verify, proxies=self.proxies,
                 )

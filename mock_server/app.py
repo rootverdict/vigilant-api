@@ -5,11 +5,15 @@ A deliberately vulnerable Flask server.
 Use this to test Vigilant-API locally without a real target.
 
 INTENTIONAL VULNERABILITIES (for learning):
-  - /transactions/<id>   → BOLA: no ownership check, any token can read any record
-  - /profile/<id>        → BOLA: same issue
-  - /fetch               → SSRF: blind fetch of any URL passed in ?url= param
-  - /transfer            → Body IDOR: accepts any from_account_id in POST body
+  - /transactions/<id>   → BOLA: no ownership check, any token reads any record
+  - /profile/<id>        → BOLA: same issue for user profiles
+  - /fetch               → SSRF: fetches any URL — simulates cloud metadata leak
+  - /transfer            → Body IDOR: accepts any from_account_id without ownership check
   - /export              → Parameter Pollution: ?id=X&id=Y uses last value
+  - /resource/<ref>      → Indirect Reference: base64/hex/int encodings accepted, no ownership check
+  - /user/update         → Mass Assignment + Body IDOR: merges all fields including privileged ones
+  - /oauth/authorize     → Missing state + Open redirect: no state required, any redirect_uri accepted
+  - /oauth/token         → Token leakage + Scope bypass + Code reuse
 
 Run with:
     cd mock_server
@@ -20,7 +24,50 @@ The server listens on http://localhost:5000
 
 import base64
 import requests as ext_requests
-from flask import Flask, request, jsonify, abort
+from flask import Flask, request, jsonify, abort, redirect
+
+# ── SSRF simulation data ──────────────────────────────────────────────
+# On a real cloud VM, 169.254.169.254 is genuinely reachable and would
+# return actual IAM credentials.  Here we return realistic fake content
+# so the SSRF detector's pattern matching fires locally.
+
+# Substrings that indicate the injected URL targets a metadata endpoint
+# (including common bypass variants the SSRF detector probes).
+_METADATA_TRIGGERS = (
+    '169.254.169.254',        # AWS / Azure raw IP (and nip.io / IPv6 / @ variants)
+    'metadata.google.internal',  # GCP metadata hostname
+    '0.0.0.0',                # SSRF bypass alias for localhost / metadata
+)
+
+_FAKE_AWS_METADATA = (
+    'ami-0abcdef1234567890\n'
+    'instance-id: i-1234567890abcdef0\n'
+    'local-hostname: ip-10-0-1-42.ec2.internal\n'
+    'local-ipv4: 10.0.1.42\n'
+    'iam/security-credentials/EC2-Default-Role'
+)
+
+_FAKE_AWS_CREDS = (
+    '{\n'
+    '  "Code": "Success",\n'
+    '  "Type": "AWS-HMAC",\n'
+    '  "AccessKeyId": "AKIAIOSFODNN7EXAMPLE",\n'
+    '  "SecretAccessKey": "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",\n'
+    '  "Token": "AQoDYXdzEJr...",\n'
+    '  "Expiration": "2099-01-01T00:00:00Z",\n'
+    '  "instanceId": "i-1234567890abcdef0"\n'
+    '}'
+)
+
+_FAKE_GCP_METADATA = (
+    '{"computeMetadata": true, "instanceId": "gce-instance-001",'
+    ' "zone": "us-central1-a"}'
+)
+
+_FAKE_AZURE_METADATA = (
+    '{"x-ms-azure": true, "instanceId": "azure-vm-rg-prod-001",'
+    ' "location": "eastus"}'
+)
 
 app = Flask(__name__)
 
@@ -93,6 +140,23 @@ def fetch_url():
     url = request.args.get('url')
     if not url:
         return jsonify({'error': 'url param required'}), 400
+
+    # Simulate SSRF: if the injected URL targets a cloud metadata endpoint
+    # (or a known bypass variant — nip.io, IPv6-mapped, @ authority trick, etc.),
+    # return realistic fake metadata so the detector fires locally.
+    # On a real cloud VM this path would never be reached — the actual
+    # 169.254.169.254 address would respond with live IAM credentials.
+    if any(trigger in url for trigger in _METADATA_TRIGGERS):
+        if 'iam/security-credentials' in url:
+            body = _FAKE_AWS_CREDS
+        elif 'computeMetadata' in url or 'metadata.google' in url:
+            body = _FAKE_GCP_METADATA
+        elif 'metadata/instance' in url:
+            body = _FAKE_AZURE_METADATA
+        else:
+            body = _FAKE_AWS_METADATA
+        return jsonify({'status': 200, 'body': body})
+
     try:
         resp = ext_requests.get(url, timeout=5)   # ← SSRF: no allowlist, fetches anything
         return jsonify({'status': resp.status_code, 'body': resp.text[:500]})
@@ -111,8 +175,8 @@ def transfer():
 
     # ← BOLA: should check ACCOUNTS[from_id]['owner_id'] == user['user_id']
     # But it doesn't! Any user can transfer from any account.
-    if from_id not in ACCOUNTS or to_id not in ACCOUNTS:
-        return jsonify({'error': 'Account not found'}), 404
+    if from_id not in ACCOUNTS:
+        return jsonify({'error': 'Source account not found'}), 404
 
     return jsonify({
         'status': 'success',
@@ -184,6 +248,84 @@ def update_user():
     #   A real ORM equivalent would be: User.update_attributes(params)
     merged = {**user, **data}
     return jsonify(merged)
+
+
+# ── OAuth 2.0 vulnerable endpoints ───────────────────────────────────
+# Intentionally vulnerable OAuth server for testing OAuthFlawDetector.
+# Point --oauth-config at sample_specs/oauth_config.json to use these.
+
+_OAUTH_CLIENT_ID    = 'vigilant-test-client'
+_OAUTH_AUTH_CODE    = 'mock-auth-code-abc123'
+_OAUTH_ACCESS_TOKEN = 'mock_access_token_vigilant_eyJhbGci'
+_REGISTERED_REDIRECT = 'http://localhost:5000/callback'
+
+
+# ❌ VULNERABLE: Missing state + Open redirect
+@app.route('/oauth/authorize', methods=['GET'])
+def oauth_authorize():
+    response_type = request.args.get('response_type')
+    client_id     = request.args.get('client_id')
+    redirect_uri  = request.args.get('redirect_uri', _REGISTERED_REDIRECT)
+    state         = request.args.get('state')   # intentionally not required
+
+    if response_type != 'code' or client_id != _OAUTH_CLIENT_ID:
+        return jsonify({'error': 'invalid_request'}), 400
+
+    # ← Open redirect: redirect_uri never validated against allowlist —
+    #   any URI (including attacker-controlled) is accepted.
+    # ← Missing state: code is issued even when state is absent —
+    #   attacker can complete the flow via CSRF without a state token.
+    location = f'{redirect_uri}?code={_OAUTH_AUTH_CODE}'
+    if state:
+        location += f'&state={state}'   # only echoes state when present
+
+    return redirect(location, code=302)
+
+
+# ❌ VULNERABLE: Token leakage in URL + Scope bypass + Code reuse
+@app.route('/oauth/token', methods=['POST'])
+def oauth_token():
+    grant_type = request.form.get('grant_type')
+    client_id  = request.form.get('client_id')
+
+    if client_id != _OAUTH_CLIENT_ID:
+        return jsonify({'error': 'invalid_client'}), 401
+
+    if grant_type == 'implicit_test':
+        # ← Token leakage: redirects to callback with access_token in URL.
+        #   Any page that loads external resources leaks it via Referer header.
+        return redirect(
+            f'{_REGISTERED_REDIRECT}?access_token={_OAUTH_ACCESS_TOKEN}',
+            code=302,
+        )
+
+    if grant_type == 'client_credentials':
+        # ← Scope bypass: client requested "read:own" but server grants
+        #   "admin read write read:all" — no scope restriction enforced.
+        return jsonify({
+            'access_token': _OAUTH_ACCESS_TOKEN,
+            'token_type':   'bearer',
+            'scope':        'admin read write read:all',
+            'expires_in':   3600,
+        })
+
+    if grant_type == 'authorization_code':
+        # ← Code reuse: same code accepted every time — never invalidated.
+        #   RFC 6749 requires single-use codes and token revocation on reuse.
+        return jsonify({
+            'access_token': _OAUTH_ACCESS_TOKEN,
+            'token_type':   'bearer',
+            'scope':        'read',
+            'expires_in':   3600,
+        })
+
+    return jsonify({'error': 'unsupported_grant_type'}), 400
+
+
+# Redirect landing page — needed so token leakage redirect resolves to 200
+@app.route('/callback', methods=['GET'])
+def oauth_callback():
+    return jsonify({'status': 'callback received', 'params': dict(request.args)})
 
 
 # ── SECURE versions for comparison ───────────────────────────────────

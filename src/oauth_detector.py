@@ -13,10 +13,9 @@ These are logic flaws — they can't be found by a port scanner.
 They require understanding the OAuth flow and probing the authorization server.
 """
 
-import re
 import time
 import requests
-from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
+from urllib.parse import urlparse
 
 
 class OAuthFlawDetector:
@@ -66,7 +65,10 @@ class OAuthFlawDetector:
         }
         if self.verbose:
             print(f'      [OAuth] Missing state check  url={self.auth_url}')
-        resp = self._request('GET', self.auth_url, params=params)
+        # allow_redirects=False so we capture the 302 Location header directly.
+        # With redirects enabled the final 200 response has no Location header
+        # and the code= / state= check would never fire.
+        resp = self._request('GET', self.auth_url, params=params, allow_redirects=False)
 
         if resp and resp.status_code in (200, 302):
             location = resp.headers.get('Location', '')

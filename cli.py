@@ -37,6 +37,7 @@ from scanner import Scanner
 
 
 @click.command()
+@click.version_option('1.0.0', '--version', '-V', prog_name='vigilant-api')
 @click.option('--spec',     required=True,  help='Path to OpenAPI YAML/JSON spec file')
 @click.option('--tokens',   required=True,  help='Path to JSON file with user tokens')
 @click.option('--ids',      default='1,2,3,4,5', show_default=True,
@@ -76,8 +77,12 @@ def main(spec, tokens, ids, output, skip, callback, oauth_config_file,
         sys.exit(1)
 
     # ── Load tokens ──────────────────────────────────────────────────
-    with open(tokens, encoding='utf-8') as f:
-        users = json.load(f)
+    try:
+        with open(tokens, encoding='utf-8') as f:
+            users = json.load(f)
+    except json.JSONDecodeError as e:
+        click.echo(f'[ERROR] Tokens file contains invalid JSON: {e}', err=True)
+        sys.exit(1)
     if not isinstance(users, list) or not users:
         click.echo('[ERROR] Tokens file must be a non-empty JSON array.', err=True)
         sys.exit(1)
@@ -98,8 +103,12 @@ def main(spec, tokens, ids, output, skip, callback, oauth_config_file,
         if not os.path.exists(oauth_config_file):
             click.echo(f'[ERROR] OAuth config file not found: {oauth_config_file}', err=True)
             sys.exit(1)
-        with open(oauth_config_file, encoding='utf-8') as f:
-            oauth_config = json.load(f)
+        try:
+            with open(oauth_config_file, encoding='utf-8') as f:
+                oauth_config = json.load(f)
+        except json.JSONDecodeError as e:
+            click.echo(f'[ERROR] OAuth config file contains invalid JSON: {e}', err=True)
+            sys.exit(1)
 
     # ── Parse resource IDs ────────────────────────────────────────────
     try:
