@@ -478,7 +478,10 @@ class BOLADetector:
 
         # No explicit ID field — fall back to counting matching non-trivial values.
         # Excludes booleans/None which are too common to signal same-object.
-        trivial = {None, '', True, False}
+        # Use a tuple (not a set) so the `not in` check works for any value
+        # type including lists and dicts — sets require hashable elements and
+        # would crash with TypeError when a response field contains a list.
+        trivial = (None, '', True, False)
         matching = sum(
             1 for k in real_keys
             if b1.get(k) == b2.get(k) and b1.get(k) not in trivial
