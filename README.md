@@ -37,7 +37,7 @@ Supports three authentication schemes:
 | API Key | Custom header (default: `X-API-Key`) |
 | OAuth 2.0 | Resource Owner Password Credentials grant with automatic token refresh |
 
-Additional capability: JWT algorithm weakness detection — inspects token headers for `alg=none` (CRITICAL) or `alg=HS256` (MEDIUM).
+Additional capability: JWT algorithm weakness detection — inspects token headers for `alg=none` (CRITICAL) or `alg=HS256` (INFO — informational, not a confirmed vulnerability).
 
 ### 3. BOLA / IDOR Detector — 5 Sub-Checks
 
@@ -68,7 +68,6 @@ Encodes the resource ID in 5 predictable formats and tests each:
 | URL-safe Base64 | `MQ` |
 | Zero-padded hex | `00000001` |
 | MD5 | `c4ca4238a0b923820dcc509a6f75849b` |
-| UUID from int | `00000000-0000-0000-0000-000000000001` |
 
 If the server accepts an encoded ID and returns real data for an unauthorized user → **MEDIUM**
 
@@ -83,7 +82,7 @@ Sends privileged fields in POST/PUT/PATCH body and checks if the server accepts 
 | Tier escalation | `subscription`, `account_type`, `plan` |
 
 Detection: server returns 200/201 and the privileged field is reflected with the sent value.
-Severity: **HIGH**
+Severity: **MEDIUM** (reflection only — persistence not verified; confirm manually before treating as HIGH)
 
 ### 4. SSRF Detector — 5 Sub-Checks
 
@@ -131,7 +130,7 @@ Severity: **HIGH**
 
 Also runs JWT algorithm checks on every user token provided:
 - `alg=none` → **CRITICAL** (unsigned tokens accepted)
-- `alg=HS256` → **MEDIUM** (symmetric algorithm, prefer RS256/ES256)
+- `alg=HS256` → **INFO** (valid algorithm; flagged as informational — use RS256/ES256 in multi-service architectures)
 
 ### 6. Forensic Logger
 Every finding is saved as a timestamped JSON evidence file in `reports/evidence/`:
@@ -441,7 +440,7 @@ python cli.py \
 
 ### What to expect
 
-- **JWT algorithm findings** — all three dummyjson tokens use `HS256` → 3 x MEDIUM findings
+- **JWT algorithm findings** — all three dummyjson tokens use `HS256` → 3 x INFO findings (informational, not a confirmed vulnerability)
 - **Simple IDOR findings** — dummyjson returns any user's data to any authenticated token → multiple HIGH findings across `/users/{id}`, `/posts/{id}`, `/carts/{id}`, `/todos/{id}`
 - **Body IDOR / Mass Assignment** — DummyJSON echoes back PUT body fields, which will trigger findings
 - **Estimated runtime** — 2-4 minutes with `--delay 0.2 --ids 1,2,3` (varies with dummyjson.com server load)
@@ -512,9 +511,10 @@ Server responds: 302 Location: http://localhost/callback?code=AUTH_CODE
 | Severity | Meaning | Example |
 |----------|---------|---------|
 | CRITICAL | Immediate compromise possible | SSRF reaching cloud metadata, `alg=none` JWT, OAuth open redirect |
-| HIGH | Significant data exposure or privilege escalation | Simple IDOR, Body IDOR, Mass Assignment, Blind SSRF |
-| MEDIUM | Limited impact or requires chaining | Parameter Pollution, Indirect Reference, HS256 JWT |
+| HIGH | Significant data exposure or privilege escalation | Simple IDOR, Body IDOR, Blind SSRF |
+| MEDIUM | Limited impact or requires chaining | Parameter Pollution, Indirect Reference, Mass Assignment (reflection only) |
 | LOW | Informational / minor issues | — |
+| INFO | Informational — not a confirmed vulnerability | HS256 JWT algorithm (valid but worth noting) |
 
 ---
 

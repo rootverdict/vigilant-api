@@ -162,6 +162,8 @@ class Scanner:
             if 'ssrf' not in self.skip:
                 url_params = self.parser.get_url_params(params)
                 if url_params:
+                    # Use first available user token for SSRF probes.
+                    # Scanner.__init__ already validates users is non-empty.
                     token = self.config['users'][0]['token']
                     # Replace any {path_param} placeholders with a default value
                     # so the URL resolves to a real endpoint (avoids 404s)

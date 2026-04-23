@@ -124,8 +124,13 @@ class SSRFDetector:
 
     def _blind_ssrf(self, method, url, param, token) -> list:
         """
-        Inject a callback URL. If server makes an outbound request, your
-        Burp Collaborator / ngrok will log a hit — confirming blind SSRF.
+        Inject a callback URL and check if the server reflects it in the response.
+
+        True blind SSRF confirmation requires an out-of-band listener (Burp
+        Collaborator / ngrok) — the scanner cannot observe DNS/HTTP hits on its
+        own. This check is a best-effort in-band signal: if the server echoes
+        the callback URL in its response body, the request was likely processed.
+
         Skipped entirely when no --callback URL was provided.
         """
         if not self.callback_url:
@@ -135,7 +140,11 @@ class SSRFDetector:
             print(f'      [SSRF] Blind  param={param["name"]}  callback={self.callback_url}')
 
         resp = self._request(method, url, token, param['name'], self.callback_url, param['in'])
-        if resp and resp.status_code not in (400, 422, 500):
+        # Only flag if the callback URL is reflected in the response body.
+        # A plain 200 response (without the URL in the body) is not evidence of
+        # SSRF — it just means the server didn't reject the input, which is normal
+        # for many endpoints and would cause high false-positive rates.
+        if resp and self.callback_url in resp.text:
             return [self._make_finding(
                 check='Blind SSRF',
                 url=url,
@@ -145,9 +154,10 @@ class SSRFDetector:
                 body_preview=resp.text[:200],
                 severity='HIGH',
                 description=(
-                    f'Server accepted the callback URL {self.callback_url} without blocking it. '
+                    f'Server reflected the callback URL "{self.callback_url}" in its response body, '
+                    'suggesting the URL was processed server-side. '
                     'Verify with your out-of-band listener (Burp Collaborator / ngrok) '
-                    'whether the server actually made an outbound request.'
+                    'to confirm an actual outbound DNS/HTTP request was made.'
                 ),
             )]
         return []
@@ -237,34 +247,44 @@ class SSRFDetector:
     # ------------------------------------------------------------------ #
 
     def _request(self, method, url, token, param_name, payload, param_in) -> requests.Response | None:
+        """Send a single SSRF probe request with optional rate-limit retry (429 backoff)."""
         headers = {'Authorization': f'Bearer {token}'}
-        try:
-            if param_in in ('query', 'path'):
-                sep = '&' if '?' in url else '?'
-                # URL-encode the payload so characters like #, &, = inside it
-                # are treated as literal data, not URL syntax.  Without this,
-                # a '#' in a bypass payload (e.g. http://trusted.com#@evil.com)
-                # is interpreted as a fragment separator and everything after it
-                # is silently stripped before the request is sent.
-                encoded_payload = _urlquote(payload, safe='')
-                resp = requests.request(
-                    method, f'{url}{sep}{param_name}={encoded_payload}',
-                    headers=headers, timeout=8, allow_redirects=True,
-                    verify=self.verify, proxies=self.proxies,
-                )
-            else:   # body / header param
-                resp = requests.request(
-                    method, url, headers=headers,
-                    json={param_name: payload}, timeout=8,
-                    verify=self.verify, proxies=self.proxies,
-                )
-            if self.delay > 0:
-                time.sleep(self.delay)
-            return resp
-        except requests.RequestException:
-            return None
+        for attempt in range(3):
+            try:
+                if param_in in ('query', 'path'):
+                    sep = '&' if '?' in url else '?'
+                    # URL-encode the payload so characters like #, &, = inside it
+                    # are treated as literal data, not URL syntax.  Without this,
+                    # a '#' in a bypass payload (e.g. http://trusted.com#@evil.com)
+                    # is interpreted as a fragment separator and everything after it
+                    # is silently stripped before the request is sent.
+                    encoded_payload = _urlquote(payload, safe='')
+                    resp = requests.request(
+                        method, f'{url}{sep}{param_name}={encoded_payload}',
+                        headers=headers, timeout=8, allow_redirects=True,
+                        verify=self.verify, proxies=self.proxies,
+                    )
+                else:   # body / header param
+                    resp = requests.request(
+                        method, url, headers=headers,
+                        json={param_name: payload}, timeout=8,
+                        verify=self.verify, proxies=self.proxies,
+                    )
+                if resp.status_code == 429:
+                    wait = (2 ** attempt) * max(self.delay, 1.0)
+                    if self.verbose:
+                        print(f'      [SSRF] 429 rate-limited — retrying in {wait:.1f}s')
+                    time.sleep(wait)
+                    continue
+                if self.delay > 0:
+                    time.sleep(self.delay)
+                return resp
+            except requests.RequestException:
+                return None
+        return None   # all retries exhausted
 
     def _contains_metadata(self, text: str) -> bool:
+        """Return True if the response body matches any known cloud metadata pattern."""
         for pattern in self.METADATA_PATTERNS:
             if re.search(pattern, text, re.IGNORECASE):
                 return True

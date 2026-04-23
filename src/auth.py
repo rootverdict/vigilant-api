@@ -116,17 +116,20 @@ class AuthHandler:
         if alg == 'hs256':
             return {
                 'type':      'OAuth Flaw',
-                'check':     'JWT Algorithm: weak HS256',
-                'vulnerable': True,
-                'severity':  'MEDIUM',
+                'check':     'JWT Algorithm: HS256 (informational)',
+                'vulnerable': False,
+                'severity':  'INFO',
                 'description': (
-                    'JWT uses HS256 (symmetric HMAC). If the secret is weak, reused across services, '
-                    'or leaked, tokens can be forged. Asymmetric algorithms (RS256/ES256) are preferred '
-                    'for APIs where multiple services verify tokens.'
+                    'JWT uses HS256 (symmetric HMAC). HS256 is a valid and widely used algorithm. '
+                    'It becomes a security risk only if the signing secret is weak, short, reused '
+                    'across services, or leaked. Asymmetric algorithms (RS256/ES256) are preferred '
+                    'for multi-service architectures where multiple consumers verify tokens.'
                 ),
                 'remediation': (
+                    'No immediate action required if HS256 is used intentionally. '
                     'Prefer RS256 or ES256 for multi-service architectures. '
-                    'If HS256 is required, ensure the secret is cryptographically random and ≥ 256 bits.'
+                    'If HS256 is kept, ensure the secret is cryptographically random and >= 256 bits, '
+                    'rotated periodically, and never committed to source control.'
                 ),
                 'evidence': {'alg': header.get('alg'), 'header': header},
             }

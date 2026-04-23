@@ -151,6 +151,19 @@ class OAuthFlawDetector:
         """
         Use an authorization code twice. RFC 6749 requires servers to reject
         the second use AND revoke all tokens issued from that code.
+
+        Limitation — mock server only:
+          This check sends a hardcoded test code ('vigilant-test-reuse-code-12345').
+          It works against the Vigilant-API mock server (which accepts any code for
+          the authorization_code grant type) but will always return a false negative
+          against a real OAuth server, because the test code is not a valid code
+          issued by that server.
+
+          A full implementation would require automating the authorization code
+          flow: (1) redirect the user to the auth endpoint, (2) capture the code
+          from the callback redirect, (3) exchange it once, (4) try again. This
+          requires browser automation (Selenium / Playwright) and is out of scope
+          for v1. The check is retained for mock-server testing and documentation.
         """
         test_code = 'vigilant-test-reuse-code-12345'
 
@@ -174,7 +187,10 @@ class OAuthFlawDetector:
                 description=(
                     'The same authorization code was accepted twice. '
                     'An attacker who intercepts a code (e.g. via Referer) can exchange it for a token '
-                    'even after the legitimate user has already used it.'
+                    'even after the legitimate user has already used it. '
+                    'NOTE: This check used a synthetic test code and is reliable only against the '
+                    'Vigilant-API mock server. Verify against a real OAuth server by manually '
+                    'capturing and replaying a live authorization code.'
                 ),
                 remediation='Authorization codes must be single-use. Invalidate immediately upon first exchange. On second use, revoke all issued tokens.',
                 evidence={'code': test_code, 'response_1_status': resp1.status_code, 'response_2_status': resp2.status_code},
@@ -219,16 +235,25 @@ class OAuthFlawDetector:
     # ------------------------------------------------------------------ #
 
     def _request(self, method, url, allow_redirects=True, **kwargs):
-        try:
-            resp = requests.request(
-                method, url, timeout=8, allow_redirects=allow_redirects,
-                verify=self.verify, proxies=self.proxies, **kwargs
-            )
-            if self.delay > 0:
-                time.sleep(self.delay)
-            return resp
-        except requests.RequestException:
-            return None
+        """Send a single OAuth probe request with optional rate-limit retry (429 backoff)."""
+        for attempt in range(3):
+            try:
+                resp = requests.request(
+                    method, url, timeout=8, allow_redirects=allow_redirects,
+                    verify=self.verify, proxies=self.proxies, **kwargs
+                )
+                if resp.status_code == 429:
+                    wait = (2 ** attempt) * max(self.delay, 1.0)
+                    if self.verbose:
+                        print(f'      [OAuth] 429 rate-limited — retrying in {wait:.1f}s')
+                    time.sleep(wait)
+                    continue
+                if self.delay > 0:
+                    time.sleep(self.delay)
+                return resp
+            except requests.RequestException:
+                return None
+        return None   # all retries exhausted
 
     def _make_finding(self, check, severity, description, remediation, evidence) -> dict:
         return {

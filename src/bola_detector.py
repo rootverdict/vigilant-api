@@ -12,8 +12,16 @@ Sub-checks:
   - Simple IDOR           : GET /resource/{id} with another user's token
   - Parameter pollution   : GET /resource?id=A&id=B (two id values)
   - Body IDOR             : POST body contains another user's object id
-  - Indirect reference    : Encoded IDs (base64, hex, UUID) are still enumerable
+  - Indirect reference    : Encoded IDs (base64, hex, MD5) are still enumerable
   - Mass assignment       : Privileged fields accepted in POST/PUT/PATCH body
+
+Known limitations:
+  - Mass Assignment detects reflection in the immediate response only.
+    Persistence is not verified (a follow-up GET would require knowing the
+    corresponding read endpoint, which is not guaranteed by the OpenAPI spec).
+    Treat findings as "possible mass assignment" and confirm manually.
+  - Indirect Reference uses realistic encodings only (base64, URL-safe base64,
+    hex, MD5). UUID-from-int is excluded — no real API accepts that format.
 
 All checks return findings into a shared list returned to the caller.
 """
@@ -22,7 +30,6 @@ import re
 import time
 import base64
 import hashlib
-import uuid as _uuid
 import requests
 
 
@@ -262,8 +269,18 @@ class BOLADetector:
     def _indirect_reference(self, method: str, path: str, resource_id: int) -> list:
         """
         Indirect Reference Enumeration: encode resource_id in formats that look
-        opaque (base64, hex, MD5, UUID-from-int) and check if the server accepts
-        them. Predictably encoded references are still enumerable by an attacker.
+        opaque (base64, hex, MD5) and check if the server accepts them.
+        Predictably encoded references are still enumerable by an attacker.
+
+        Encodings used:
+          - Standard base64       e.g. "MQ==" for ID 1
+          - URL-safe base64       e.g. "MQ"  for ID 1
+          - Zero-padded hex       e.g. "00000001"
+          - MD5 of string repr    e.g. "c4ca4238a0b923820dcc509a6f75849b"
+
+        UUID-from-int is intentionally excluded: str(UUID(int=1)) produces
+        '00000000-0000-0000-0000-000000000001', which no real API uses as an
+        identifier format, making it a guaranteed false negative.
 
         A finding means the server accepted an encoded variant of a victim's ID
         without checking ownership.
@@ -271,13 +288,12 @@ class BOLADetector:
         findings = []
         attacker = self.users[-1]
 
-        # Generate predictable alternative representations of resource_id
+        # Realistic encodings only — all are actually used by real APIs
         encoded_ids = [
             base64.b64encode(str(resource_id).encode()).decode(),                     # "MQ==" for 1
-            base64.urlsafe_b64encode(str(resource_id).encode()).decode().rstrip('='), # url-safe
+            base64.urlsafe_b64encode(str(resource_id).encode()).decode().rstrip('='), # url-safe, no padding
             f'{resource_id:08x}',                                                     # "00000001"
-            hashlib.md5(str(resource_id).encode()).hexdigest(),                       # MD5 hex
-            str(_uuid.UUID(int=resource_id)),                                         # UUID from int
+            hashlib.md5(str(resource_id).encode()).hexdigest(),                       # MD5 hex digest
         ]
 
         for encoded in encoded_ids:
@@ -323,11 +339,18 @@ class BOLADetector:
     def _mass_assignment(self, path: str) -> list:
         """
         Mass Assignment: send privileged fields (role, is_admin, balance, etc.)
-        in a POST/PUT/PATCH body and check if the server reflects them back,
-        indicating it accepted and stored the value without stripping it.
+        in a POST/PUT/PATCH body and check if the server reflects them back.
 
-        Vulnerable when the server binds the raw request body directly to a
-        database model without field-level allowlisting.
+        Limitation — reflection only, not persistence:
+          This check confirms that the server echoes the privileged field back
+          in the immediate response. It does NOT verify that the value was
+          persisted to the database (a follow-up GET would require knowing the
+          corresponding read endpoint, which cannot be inferred from the spec).
+          Some APIs echo request fields without storing them (e.g. for
+          documentation/debugging purposes) → treat findings as "possible mass
+          assignment" requiring manual confirmation.
+
+        Severity is set to MEDIUM to reflect this uncertainty.
         """
         findings = []
         attacker = self.users[-1]
@@ -373,7 +396,7 @@ class BOLADetector:
                                     'type':              'BOLA/IDOR',
                                     'check':             'Mass Assignment',
                                     'vulnerable':        True,
-                                    'severity':          'HIGH',
+                                    'severity':          'MEDIUM',
                                     'endpoint':          path,
                                     'resource_id':       None,
                                     'owner':             'system',
@@ -388,9 +411,11 @@ class BOLADetector:
                                     },
                                     'description': (
                                         f'Server accepted privileged field "{key}" = {sent_val!r} '
-                                        f'via {http_method} and reflected it in the response. '
-                                        'Mass assignment allows users to escalate privileges or '
-                                        'manipulate server-controlled fields.'
+                                        f'via {http_method} and reflected it in the immediate response. '
+                                        'NOTE: This check confirms reflection only — persistence was not '
+                                        'verified. Confirm manually that the value is actually stored. '
+                                        'If confirmed persistent, this is a HIGH severity mass assignment '
+                                        'vulnerability allowing privilege escalation.'
                                     ),
                                     'remediation': (
                                         'Apply an explicit allowlist (DTO pattern) of fields users '
@@ -414,23 +439,38 @@ class BOLADetector:
         return f'{self.base_url}{resolved}'
 
     def _strip_path_params(self, path: str) -> str:
-        """Remove {param} segments for endpoints used as base in query/body checks."""
+        """Remove /{param} segments so the path can be used as a base URL for body/query checks.
+
+        e.g. '/transactions/{id}' → '/transactions'
+        """
         return re.sub(r'/\{[^}]+\}', '', path)
 
     def _request(self, method: str, url: str, token: str, **kwargs) -> requests.Response | None:
-        try:
-            headers = {'Authorization': f'Bearer {token}'}
-            resp = requests.request(
-                method, url, headers=headers, timeout=8,
-                verify=self.verify, proxies=self.proxies, **kwargs
-            )
-            if self.delay > 0:
-                time.sleep(self.delay)
-            return resp
-        except requests.RequestException:
-            return None
+        """Send a single HTTP request with optional rate-limit retry (429 backoff)."""
+        headers = {'Authorization': f'Bearer {token}'}
+        for attempt in range(3):
+            try:
+                resp = requests.request(
+                    method, url, headers=headers, timeout=8,
+                    verify=self.verify, proxies=self.proxies, **kwargs
+                )
+                if resp.status_code == 429:
+                    # Exponential backoff: 1 s, 2 s, 4 s (capped at 3 attempts).
+                    # Respects --delay if set; otherwise defaults to 1 s base wait.
+                    wait = (2 ** attempt) * max(self.delay, 1.0)
+                    if self.verbose:
+                        print(f'      [BOLA] 429 rate-limited — retrying in {wait:.1f}s')
+                    time.sleep(wait)
+                    continue
+                if self.delay > 0:
+                    time.sleep(self.delay)
+                return resp
+            except requests.RequestException:
+                return None
+        return None   # all retries exhausted
 
     def _safe_json(self, resp: requests.Response | None):
+        """Parse response as JSON; fall back to first 200 chars of text on failure."""
         if resp is None:
             return None
         try:
@@ -453,9 +493,15 @@ class BOLADetector:
         (not just the same resource type).
 
         Strategy:
-          1. Both must be dicts with 2+ overlapping non-error keys → same schema
-          2. At least one ID-field value must be equal → same object, not just
-             two users each getting their own record back.
+          1. Both must be dicts with at least 1 overlapping non-error key.
+          2. If any ID-like field (name contains 'id') has the same value in
+             both responses, the attacker received the owner's resource → IDOR.
+             Single matching ID field is sufficient — some resources are small
+             (e.g. {"id": 1, "status": "ok"}) and requiring ≥2 matches would
+             cause false negatives on those endpoints.
+          3. If no explicit ID field exists, require ≥2 matching non-trivial
+             values to avoid flagging resources that happen to share a common
+             constant field (e.g. {"status": "ok"}).
 
         This prevents false positives on endpoints like /user/update where both
         users legitimately get 200 but each receives their own distinct record
@@ -467,20 +513,21 @@ class BOLADetector:
         shared_keys = set(b1.keys()) & set(b2.keys())
         error_indicators = {'error', 'detail', 'message'}
         real_keys = shared_keys - error_indicators
-        if len(real_keys) < 2:
+        if not real_keys:
             return False
 
-        # Prefer checking ID-like fields — if they share the same value, the
-        # attacker received the same resource the owner has (IDOR confirmed).
+        # ID-like fields: single match is enough to confirm same resource.
+        # Rationale: {"id": 1, "status": "ok"} — only one non-trivial match
+        # is available, but "id" matching is high-confidence evidence of IDOR.
         id_keys = {k for k in real_keys if 'id' in k.lower()}
         if id_keys:
             return any(b1[k] == b2[k] for k in id_keys)
 
-        # No explicit ID field — fall back to counting matching non-trivial values.
-        # Excludes booleans/None which are too common to signal same-object.
-        # Use a tuple (not a set) so the `not in` check works for any value
-        # type including lists and dicts — sets require hashable elements and
-        # would crash with TypeError when a response field contains a list.
+        # No explicit ID field — require ≥2 matching non-trivial values to
+        # reduce false positives from resources with only a single shared field.
+        # Use a tuple (not a set) so `not in` works for any value type including
+        # lists and dicts — sets require hashable elements and would raise
+        # TypeError when a response field contains a list.
         trivial = (None, '', True, False)
         matching = sum(
             1 for k in real_keys
