@@ -68,7 +68,12 @@ paths:
           in: query
           required: true
           schema:
-            type: integer
+            # Declared as array to reflect that the server accepts multiple
+            # ?id= values (e.g. ?id=1&id=2).  The mock server uses the last
+            # value — no ownership check performed on either value.
+            type: array
+            items:
+              type: integer
       security:
         - BearerAuth: []
 

@@ -258,7 +258,15 @@ class SSRFDetector:
                     # a '#' in a bypass payload (e.g. http://trusted.com#@evil.com)
                     # is interpreted as a fragment separator and everything after it
                     # is silently stripped before the request is sent.
-                    encoded_payload = _urlquote(payload, safe='')
+                    #
+                    # Guard against double-encoding: if the payload already contains
+                    # percent-encoded sequences (e.g. %09, %2e), encoding again
+                    # would turn '%09' into '%2509', which is a different byte and
+                    # causes the bypass to silently fail (false negative).
+                    if re.search(r'%[0-9A-Fa-f]{2}', payload):
+                        encoded_payload = payload          # already encoded — pass through
+                    else:
+                        encoded_payload = _urlquote(payload, safe='')
                     resp = requests.request(
                         method, f'{url}{sep}{param_name}={encoded_payload}',
                         headers=headers, timeout=8, allow_redirects=True,

@@ -12,6 +12,7 @@ The CLI (cli.py) calls Scanner.run() and that's all it needs to know.
 
 import os
 import re as _re
+import time as _time
 from colorama import Fore, Style, init as colorama_init
 
 from spec_parser    import OpenAPIParser
@@ -112,6 +113,7 @@ class Scanner:
         endpoints = self.parser.get_endpoints()
 
         self.logger.log_scan_start(spec_file, target)
+        _scan_start = _time.monotonic()
         self._print_banner(target, len(endpoints))
 
         # ── Scan each endpoint ─────────────────────────────────────────
@@ -175,9 +177,12 @@ class Scanner:
                         if fp:
                             self._print_finding(f, fp)
 
-        # ── OAuth checks (endpoint-agnostic) ──────────────────────────
-        if 'oauth' not in self.skip:
-            # JWT algorithm weakness check for every user token
+        # ── JWT algorithm checks ───────────────────────────────────────
+        # Runs independently of --skip oauth: JWT header inspection applies to
+        # any Bearer token (not just OAuth-issued ones), so skipping the OAuth
+        # server probes should not suppress these token-level checks.
+        # Use --skip jwt to explicitly suppress them.
+        if 'jwt' not in self.skip:
             for user in self.config['users']:
                 token   = user.get('token', '')
                 finding = AuthHandler.check_jwt_algorithm(token)
@@ -186,13 +191,15 @@ class Scanner:
                     fp = self.logger.log_finding(finding)
                     self._print_finding(finding, fp)
 
-            # Full OAuth server checks (only if oauth_config provided)
-            if self.oauth:
-                print(f'\n{Fore.CYAN}[*] Running OAuth flaw checks...{Style.RESET_ALL}')
-                findings = self.oauth.run_all_checks()
-                for f in findings:
-                    fp = self.logger.log_finding(f)
-                    self._print_finding(f, fp)
+        # ── OAuth server checks ────────────────────────────────────────
+        # Probes the authorization / token endpoints for logic flaws.
+        # Only runs when --oauth-config is provided AND oauth is not skipped.
+        if 'oauth' not in self.skip and self.oauth:
+            print(f'\n{Fore.CYAN}[*] Running OAuth flaw checks...{Style.RESET_ALL}')
+            findings = self.oauth.run_all_checks()
+            for f in findings:
+                fp = self.logger.log_finding(f)
+                self._print_finding(f, fp)
 
         # ── Generate reports ──────────────────────────────────────────
         meta = self.logger.log_scan_end()
@@ -206,7 +213,8 @@ class Scanner:
         json_path = self.reporter.generate_json(all_findings, meta)
         html_path = self.reporter.generate_html(all_findings, meta)
 
-        self._print_summary(summary, json_path, html_path)
+        elapsed = _time.monotonic() - _scan_start
+        self._print_summary(summary, json_path, html_path, elapsed)
 
         return {
             'findings':    all_findings,
@@ -248,10 +256,12 @@ class Scanner:
         print(f'    {sev_color}[{sev}]{Style.RESET_ALL} {check}')
         print(f'           Evidence → {filepath}')
 
-    def _print_summary(self, summary, json_path, html_path):
+    def _print_summary(self, summary, json_path, html_path, elapsed: float = 0.0):
         total = sum(summary.values())
+        mins, secs = divmod(int(elapsed), 60)
+        duration = f'{mins}m {secs}s' if mins else f'{secs}s'
         print(f'\n{Fore.CYAN}{"="*60}')
-        print(f'  Scan Complete — {total} finding(s)')
+        print(f'  Scan Complete — {total} finding(s)  [{duration}]')
         print(f'  CRITICAL: {summary["CRITICAL"]}  HIGH: {summary["HIGH"]}  '
               f'MEDIUM: {summary["MEDIUM"]}  LOW: {summary["LOW"]}  INFO: {summary["INFO"]}')
         print(f'\n  JSON report : {json_path}')

@@ -1,7 +1,30 @@
+# Python
 venv/
 __pycache__/
 *.pyc
 *.pyo
-reports/
+*.pyd
+*.pdb
 *.egg-info/
+dist/
+build/
+.eggs/
+
+# Scanner output — never commit generated reports or evidence
+reports/
+evidence/
+
+# Secrets & environment
 .env
+.env.*
+sample_specs/dummyjson_tokens.json
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db

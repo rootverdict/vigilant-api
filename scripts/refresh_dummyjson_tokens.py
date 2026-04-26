@@ -58,9 +58,10 @@ def main():
 
     print(f"\nTokens saved to: {out}")
     print("Valid for 60 minutes. Run scan now:\n")
-    print("  python cli.py --spec sample_specs/dummyjson.yaml "
-          "--tokens sample_specs/dummyjson_tokens.json "
-          "--skip ssrf --delay 0.2 --ids 1,2,3")
+    print("  python cli.py --spec sample_specs/dummyjson.yaml \\")
+    print("                --tokens sample_specs/dummyjson_tokens.json \\")
+    print("                --skip ssrf --skip oauth --delay 0.2 --ids 1,2,3")
+    print("\n  (SSRF and OAuth skipped — dummyjson has no /fetch or OAuth server endpoints)")
 
 
 if __name__ == "__main__":
