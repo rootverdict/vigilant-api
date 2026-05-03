@@ -272,7 +272,27 @@ class SSRFDetector:
                         headers=headers, timeout=8, allow_redirects=True,
                         verify=self.verify, proxies=self.proxies,
                     )
-                else:   # body / header param
+                elif param_in == 'header':
+                    # Inject payload as a custom request header.
+                    # e.g. X-Target-URL: http://169.254.169.254/...
+                    headers[param_name] = payload
+                    resp = requests.request(
+                        method, url, headers=headers, timeout=8,
+                        allow_redirects=True,
+                        verify=self.verify, proxies=self.proxies,
+                    )
+                elif param_in == 'cookie':
+                    # Inject payload as a cookie value.
+                    # Append to existing Cookie header if already present.
+                    existing = headers.get('Cookie', '')
+                    cookie_str = f'{param_name}={payload}'
+                    headers['Cookie'] = f'{existing}; {cookie_str}' if existing else cookie_str
+                    resp = requests.request(
+                        method, url, headers=headers, timeout=8,
+                        allow_redirects=True,
+                        verify=self.verify, proxies=self.proxies,
+                    )
+                else:   # body / form param
                     resp = requests.request(
                         method, url, headers=headers,
                         json={param_name: payload}, timeout=8,

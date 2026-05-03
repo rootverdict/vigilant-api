@@ -34,10 +34,22 @@ paths:
 
   /fetch:
     get:
-      summary: Server-side URL fetch (SSRF vulnerable)
+      summary: Server-side URL fetch (SSRF vulnerable — query param)
       parameters:
         - name: url
           in: query
+          required: true
+          schema:
+            type: string
+      security:
+        - BearerAuth: []
+
+  /proxy:
+    get:
+      summary: Server-side proxy fetch (SSRF vulnerable — header param)
+      parameters:
+        - name: X-Target-URL
+          in: header
           required: true
           schema:
             type: string

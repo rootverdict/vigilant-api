@@ -86,6 +86,8 @@ Severity: **MEDIUM** (reflection only — persistence not verified; confirm manu
 
 ### 4. SSRF Detector — 5 Sub-Checks
 
+Payloads are injected into every parameter the scanner classifies as URL-accepting (`url`, `uri`, `redirect`, `callback`, `webhook`, `target`, `host`, `proxy` keywords). Parameters can be delivered as query strings, path segments, request headers, or cookie values — the detector handles all four injection locations correctly.
+
 #### Basic SSRF
 Injects cloud metadata endpoints into URL-accepting parameters and checks if the response contains metadata patterns (AWS keys, AMI IDs, GCP markers, Azure markers, raw `169.254.169.254`).
 Targets: AWS IMDSv1, GCP, Azure metadata endpoints.
@@ -251,7 +253,7 @@ Options:
   --tokens         PATH     Path to JSON file with user tokens          [required]
   --ids            TEXT     Comma-separated resource IDs to probe       [default: 1,2,3,4,5]
   --output         DIR      Directory for report output                 [default: reports]
-  --skip           TEXT     Skip check type: bola | ssrf | oauth        [repeatable]
+  --skip           TEXT     Skip check type: bola | ssrf | oauth | jwt  [repeatable]
   --callback       URL      Blind SSRF callback (Burp Collaborator/ngrok). Omit to skip blind SSRF.
   --oauth-config   PATH     JSON file with OAuth server config
   --delay          FLOAT    Seconds between requests (rate limiting)    [default: 0.0]
@@ -457,7 +459,8 @@ Run `python mock_server/app.py` to start a local vulnerable server on port 5000.
 |--------|------|--------------|----------------|
 | GET | `/transactions/{id}` | No ownership check — any token reads any record | Simple IDOR |
 | GET | `/profile/{user_id}` | No ownership check — leaks any user profile | Simple IDOR |
-| GET | `/fetch?url=` | Fetches any URL without allowlist — simulates cloud metadata response | Basic SSRF, SSRF via Redirect, Partial SSRF |
+| GET | `/fetch?url=` | Fetches any URL without allowlist — simulates cloud metadata response (query param) | Basic SSRF, SSRF via Redirect, Partial SSRF |
+| GET | `/proxy` | Fetches any URL from `X-Target-URL` request header without allowlist (header param) | Basic SSRF, SSRF via Redirect, Partial SSRF |
 | POST | `/transfer` | Accepts any `from_account_id` without verifying ownership | Body IDOR |
 | GET | `/export?id=` | Uses last `id` value when duplicated | Parameter Pollution |
 | GET | `/resource/<ref>` | Decodes base64/hex/int ID with no ownership check | Indirect Reference |

@@ -7,7 +7,8 @@ Use this to test Vigilant-API locally without a real target.
 INTENTIONAL VULNERABILITIES (for learning):
   - /transactions/<id>   → BOLA: no ownership check, any token reads any record
   - /profile/<id>        → BOLA: same issue for user profiles
-  - /fetch               → SSRF: fetches any URL — simulates cloud metadata leak
+  - /fetch               → SSRF: fetches any URL via query param — simulates cloud metadata leak
+  - /proxy               → SSRF: fetches any URL via X-Target-URL header — tests header-based SSRF
   - /transfer            → Body IDOR: accepts any from_account_id without ownership check
   - /export              → Parameter Pollution: ?id=X&id=Y uses last value
   - /resource/<ref>      → Indirect Reference: base64/hex/int encodings accepted, no ownership check
@@ -131,6 +132,33 @@ def get_profile(user_id):
         if u['user_id'] == user_id:
             return jsonify({'user_id': u['user_id'], 'name': u['name'], 'role': u['role']})
     return jsonify({'error': 'Not found'}), 404
+
+
+# ❌ VULNERABLE: SSRF via header — reads target URL from X-Target-URL request header.
+# Tests SSRF detection when the URL is delivered via a header rather than a query param.
+@app.route('/proxy', methods=['GET'])
+def proxy_via_header():
+    require_auth()
+    target_url = request.headers.get('X-Target-URL')
+    if not target_url:
+        return jsonify({'error': 'X-Target-URL header required'}), 400
+
+    if any(trigger in target_url for trigger in _METADATA_TRIGGERS):
+        if 'iam/security-credentials' in target_url:
+            body = _FAKE_AWS_CREDS
+        elif 'computeMetadata' in target_url or 'metadata.google' in target_url:
+            body = _FAKE_GCP_METADATA
+        elif 'metadata/instance' in target_url:
+            body = _FAKE_AZURE_METADATA
+        else:
+            body = _FAKE_AWS_METADATA
+        return jsonify({'status': 200, 'body': body})
+
+    try:
+        resp = ext_requests.get(target_url, timeout=5)
+        return jsonify({'status': resp.status_code, 'body': resp.text[:500]})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 
 # ❌ VULNERABLE: SSRF — fetches any URL passed in ?url= without validation
