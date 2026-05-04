@@ -168,7 +168,7 @@ Dark-themed human-readable report containing:
 Full-featured Click-based CLI with 11 options. See [Usage](#usage) section.
 
 ### 9. Mock Flask Server
-Intentionally vulnerable Flask server for local testing with 7 vulnerable endpoints and 2 secure comparison endpoints.
+Intentionally vulnerable Flask server for local testing with 10 vulnerable endpoints and 2 secure comparison endpoints.
 
 ---
 
@@ -177,31 +177,46 @@ Intentionally vulnerable Flask server for local testing with 7 vulnerable endpoi
 ```
 vigilant-api/
 ├── cli.py                        # Main entry point — run from here
-├── requirements.txt              # Python dependencies
-├── .gitignore                    # Excludes venv/, reports/, __pycache__
+├── pyproject.toml                # Build config + pytest settings
+├── requirements.txt              # Runtime + dev dependencies
+├── LICENSE                       # MIT licence
+├── README.md                     # This file
+├── .gitignore                    # Excludes venv/, reports/, evidence/, __pycache__
 │
 ├── src/
+│   ├── __init__.py
 │   ├── scanner.py                # Orchestrator — wires everything together
-│   ├── spec_parser.py            # OpenAPI YAML/JSON parser
-│   ├── auth.py                   # Auth handler + JWT inspection
+│   ├── spec_parser.py            # OpenAPI YAML/JSON parser + $ref resolver
+│   ├── auth.py                   # Auth handler + JWT algorithm inspection
 │   ├── bola_detector.py          # BOLA/IDOR — 5 sub-checks
 │   ├── ssrf_detector.py          # SSRF — 5 sub-checks
 │   ├── oauth_detector.py         # OAuth flaws — 5 sub-checks
 │   ├── logger.py                 # Forensic evidence file writer
-│   └── reporter.py               # HTML + JSON report generator
+│   └── reporter.py               # HTML + JSON report generator (Jinja2, autoescape)
 │
 ├── mock_server/
-│   └── app.py                    # Vulnerable Flask server (port 5000)
+│   ├── __init__.py
+│   └── app.py                    # Intentionally vulnerable Flask server (port 5000)
 │
 ├── scripts/
-│   └── refresh_dummyjson_tokens.py   # Fetch fresh tokens from dummyjson.com
+│   ├── __init__.py
+│   └── refresh_dummyjson_tokens.py   # Fetch fresh JWTs from dummyjson.com
+│
+├── tests/
+│   ├── __init__.py
+│   ├── test_auth.py              # 18 tests — JWT alg=none / HS256 / strong algs / opaque
+│   ├── test_bola_detector.py     # 20 tests — _bodies_similar, _is_error_body, helpers
+│   ├── test_integration.py       # 16 tests — full scan against live mock server (port 5099)
+│   ├── test_oauth_detector.py    # 12 tests — _make_finding, _MOCK_ONLY_CHECKS, checks
+│   ├── test_spec_parser.py       # 15 tests — base URL, endpoints, params, $ref resolution
+│   └── test_ssrf_detector.py     # 20 tests — _contains_metadata, _make_finding, _request
 │
 └── sample_specs/
-    ├── fintech.yaml              # OpenAPI 3.0.3 test spec for mock server (9 endpoints)
+    ├── fintech.yaml              # OpenAPI 3.0.3 test spec for mock server (10 endpoints)
     ├── tokens.json               # Three mock server test tokens (alice, bob, admin)
     ├── oauth_config.json         # OAuth config pointing at mock server OAuth endpoints
     ├── dummyjson.yaml            # OpenAPI spec for dummyjson.com (real external API)
-    └── dummyjson_tokens.json     # JWT tokens for dummyjson.com (expire after 60 min)
+    └── dummyjson_tokens.json     # JWT tokens for dummyjson.com (gitignored — expire after 60 min)
 ```
 
 ---
@@ -219,6 +234,9 @@ flask>=3.0.0
 click>=8.1.7
 colorama>=0.4.6
 PyJWT>=2.8.0
+
+# Development / testing
+pytest>=9.0
 ```
 
 ---
@@ -229,6 +247,12 @@ PyJWT>=2.8.0
 git clone https://github.com/rootverdict/vigilant-api.git
 cd vigilant-api
 pip install -r requirements.txt
+```
+
+Or install as an editable package (also installs the `vigilant-api` CLI entry point):
+
+```bash
+pip install -e .
 ```
 
 ---
@@ -384,7 +408,7 @@ reports/
 ============================================================
   Vigilant-API v1.0 — API Security Scanner
   Target    : http://localhost:5000
-  Endpoints : 9
+  Endpoints : 10
   Delay     : 0.0s  |  Verify TLS: True
   Proxy     : none
   Callback  : none (blind SSRF skipped)
@@ -392,10 +416,10 @@ reports/
 
   GET     /transactions/{id}
     [HIGH] Simple IDOR
-           Evidence → reports/evidence/evidence_..._A1B2.json
+           Evidence -> reports/evidence/evidence_..._A1B2.json
   POST    /transfer
     [HIGH] Body IDOR
-           Evidence → reports/evidence/evidence_..._C3D4.json
+           Evidence -> reports/evidence/evidence_..._C3D4.json
 
 ============================================================
   Scan Complete — 3 finding(s)
@@ -517,9 +541,9 @@ Server responds: 302 Location: http://localhost/callback?code=AUTH_CODE
 | Severity | Meaning | Example |
 |----------|---------|---------|
 | CRITICAL | Immediate compromise possible | SSRF reaching cloud metadata, `alg=none` JWT, OAuth open redirect |
-| HIGH | Significant data exposure or privilege escalation | Simple IDOR, Body IDOR, Blind SSRF |
+| HIGH | Significant data exposure or privilege escalation | Simple IDOR, Body IDOR, Partial SSRF |
 | MEDIUM | Limited impact or requires chaining | Parameter Pollution, Indirect Reference, Mass Assignment (reflection only) |
-| LOW | Informational / minor issues | — |
+| LOW | Unconfirmed signal — manual verification needed | Blind SSRF (in-band signal only) |
 | INFO | Informational — not a confirmed vulnerability | HS256 JWT algorithm (valid but worth noting) |
 
 ---
