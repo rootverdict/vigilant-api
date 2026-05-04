@@ -5,3 +5,6 @@ flask>=3.0.0
 click>=8.1.7
 colorama>=0.4.6
 PyJWT>=2.8.0
+
+# Development / testing
+pytest>=9.0

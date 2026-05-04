@@ -45,7 +45,13 @@ class ForensicLogger:
         filename     = f'evidence_{timestamp}_{vuln_type}_{finding_id}.json'
         filepath     = os.path.join(self.evidence_dir, filename)
 
-        # Enrich the finding before saving
+        # Enrich the finding before saving.
+        # Reconstruct a minimal request/response summary for forensic review:
+        # the detectors forward what they captured in the `evidence` dict, so we
+        # lift it into a dedicated `http` block so analysts can reproduce the test.
+        raw_evidence = finding.get('evidence', {})
+        http_block = self._build_http_block(finding, raw_evidence)
+
         enriched = {
             'metadata': {
                 'finding_id':   finding_id,
@@ -61,7 +67,8 @@ class ForensicLogger:
                 'parameter':  finding.get('parameter'),
                 'resource_id': finding.get('resource_id'),
             },
-            'evidence':      finding.get('evidence', {}),
+            'http':          http_block,
+            'evidence':      raw_evidence,
             'description':   finding.get('description', ''),
             'remediation':   finding.get('remediation', ''),
         }
@@ -74,6 +81,45 @@ class ForensicLogger:
         self.findings.append(enriched)
 
         return filepath
+
+    @staticmethod
+    def _build_http_block(finding: dict, evidence: dict) -> dict:
+        """
+        Build a human-readable HTTP request/response summary from fields the
+        detectors already collected.  This lets an analyst reproduce the test
+        without re-running the scanner.
+
+        Fields populated vary by detector type:
+          SSRF   → endpoint, parameter, evidence.payload, evidence.status_code, evidence.body_preview
+          BOLA   → endpoint, resource_id, unauthorized_user, evidence.payload / body_preview
+          OAuth  → endpoint (or check name), evidence keys vary
+        """
+        endpoint  = finding.get('endpoint', '')
+        param     = finding.get('parameter', '')
+        payload   = evidence.get('payload', '')
+        status    = evidence.get('status_code', '')
+        preview   = evidence.get('body_preview', '')
+
+        # Reconstruct a curl-style request line for quick reproduction
+        if payload and param:
+            request_hint = f'[param] {param} = {payload[:200]}'
+        elif payload:
+            request_hint = str(payload)[:200]
+        else:
+            request_hint = '(see evidence block for request details)'
+
+        return {
+            'request': {
+                'endpoint':      endpoint,
+                'injected_param': param or None,
+                'injected_value': str(payload)[:200] if payload else None,
+                'reproduction':  request_hint,
+            },
+            'response': {
+                'status_code':  status or None,
+                'body_preview': str(preview)[:500] if preview else None,
+            },
+        }
 
     def log_scan_start(self, spec_file: str, target: str):
         """Record scan metadata at the start."""

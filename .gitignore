@@ -19,6 +19,9 @@ evidence/
 .env.*
 sample_specs/dummyjson_tokens.json
 
+# Test cache
+.pytest_cache/
+
 # IDE
 .vscode/
 .idea/

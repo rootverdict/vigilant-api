@@ -3,6 +3,12 @@ spec_parser.py
 --------------
 Parses OpenAPI 3.x YAML/JSON specs.
 Extracts: endpoints, parameters, security schemes, base URL.
+
+$ref support
+------------
+In-document JSON Pointer refs (#/components/...) are resolved automatically
+before parameter extraction.  External file refs (./other.yaml) and HTTP refs
+are not supported and are silently skipped — log a warning in that case.
 """
 
 import yaml
@@ -96,13 +102,43 @@ class OpenAPIParser:
             return servers[0].get('url', 'http://localhost:5000').rstrip('/')
         return 'http://localhost:5000'
 
+    def _resolve_ref(self, obj: dict) -> dict:
+        """
+        If *obj* is a JSON Reference object (has a ``$ref`` key), resolve it
+        against the current document and return the referenced dict.
+
+        Only in-document refs starting with ``#/`` are supported — they are the
+        vast majority of real-world usage (``#/components/parameters/...``,
+        ``#/components/schemas/...``).  External file refs and HTTP URLs are
+        returned unchanged so the caller can fall back gracefully.
+
+        Per JSON Pointer (RFC 6901): ``~1`` encodes ``/``, ``~0`` encodes ``~``.
+        """
+        ref = obj.get('$ref', '') if isinstance(obj, dict) else ''
+        if not ref or not ref.startswith('#/'):
+            return obj   # not a local ref — return as-is
+
+        parts = ref[2:].split('/')
+        node = self.spec
+        for raw_part in parts:
+            part = raw_part.replace('~1', '/').replace('~0', '~')
+            if not isinstance(node, dict) or part not in node:
+                return obj   # unresolvable ref — fall back to original obj
+            node = node[part]
+
+        return node if isinstance(node, dict) else obj
+
     def _extract_params(self, path_params: list, details: dict) -> list:
         params = []
         seen = set()
 
         # `or []` guards against `parameters: null` in the YAML spec — without
         # it, `list(None)` raises TypeError and aborts the entire scan.
-        for param in list(path_params or []) + list(details.get('parameters') or []):
+        for raw_param in list(path_params or []) + list(details.get('parameters') or []):
+            # Resolve $ref before accessing fields — handles specs that define
+            # reusable parameters under #/components/parameters/.
+            param = self._resolve_ref(raw_param)
+
             name = param.get('name')
             location = param.get('in')
             if not name or not location:

@@ -38,7 +38,23 @@ class OAuthFlawDetector:
     #  Entry point                                                         #
     # ------------------------------------------------------------------ #
 
+    # Checks that rely on synthetic payloads — effective only against the
+    # Vigilant-API mock server.  Against a real OAuth server they will return
+    # no findings (silent false-negative, NOT a false-positive).
+    _MOCK_ONLY_CHECKS = frozenset({
+        'Authorization Code Reuse',
+        'Token Leakage in URL / Referer',
+    })
+
     def run_all_checks(self) -> list:
+        if self.verbose:
+            print(
+                '      [OAuth] NOTE: "Authorization Code Reuse" and '
+                '"Token Leakage in URL / Referer" checks use synthetic payloads '
+                'and are only effective against the Vigilant-API mock server. '
+                'A negative result against a real OAuth server does NOT confirm '
+                'those controls are implemented correctly.'
+            )
         findings = []
         findings += self._check_missing_state()
         findings += self._check_token_leakage_in_url()
@@ -246,6 +262,12 @@ class OAuthFlawDetector:
                     wait = (2 ** attempt) * max(self.delay, 1.0)
                     if self.verbose:
                         print(f'      [OAuth] 429 rate-limited — retrying in {wait:.1f}s')
+                    time.sleep(wait)
+                    continue
+                if resp.status_code >= 500:
+                    wait = (2 ** attempt) * max(self.delay, 0.5)
+                    if self.verbose:
+                        print(f'      [OAuth] {resp.status_code} server error — retrying in {wait:.1f}s')
                     time.sleep(wait)
                     continue
                 if self.delay > 0:

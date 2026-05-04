@@ -254,7 +254,7 @@ class Scanner:
         }.get(sev, Fore.WHITE)
         check = finding.get('check', '?')
         print(f'    {sev_color}[{sev}]{Style.RESET_ALL} {check}')
-        print(f'           Evidence → {filepath}')
+        print(f'           Evidence -> {filepath}')
 
     def _print_summary(self, summary, json_path, html_path, elapsed: float = 0.0):
         total = sum(summary.values())

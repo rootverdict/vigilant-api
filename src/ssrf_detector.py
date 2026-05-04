@@ -146,18 +146,19 @@ class SSRFDetector:
         # for many endpoints and would cause high false-positive rates.
         if resp and self.callback_url in resp.text:
             return [self._make_finding(
-                check='Blind SSRF',
+                check='Blind SSRF (unconfirmed — in-band signal only)',
                 url=url,
                 param=param['name'],
                 payload=self.callback_url,
                 status=resp.status_code,
                 body_preview=resp.text[:200],
-                severity='HIGH',
+                severity='LOW',
                 description=(
-                    f'Server reflected the callback URL "{self.callback_url}" in its response body, '
-                    'suggesting the URL was processed server-side. '
-                    'Verify with your out-of-band listener (Burp Collaborator / ngrok) '
-                    'to confirm an actual outbound DNS/HTTP request was made.'
+                    f'Server reflected the callback URL "{self.callback_url}" in its response body. '
+                    'This is a weak in-band signal only — it does NOT confirm that the server made '
+                    'an outbound request to the callback URL. '
+                    'REQUIRED: Check your out-of-band listener (Burp Collaborator / ngrok / interactsh) '
+                    'for an actual DNS or HTTP hit. Only escalate severity if OOB hit confirmed.'
                 ),
             )]
         return []
@@ -302,6 +303,12 @@ class SSRFDetector:
                     wait = (2 ** attempt) * max(self.delay, 1.0)
                     if self.verbose:
                         print(f'      [SSRF] 429 rate-limited — retrying in {wait:.1f}s')
+                    time.sleep(wait)
+                    continue
+                if resp.status_code >= 500:
+                    wait = (2 ** attempt) * max(self.delay, 0.5)
+                    if self.verbose:
+                        print(f'      [SSRF] {resp.status_code} server error — retrying in {wait:.1f}s')
                     time.sleep(wait)
                     continue
                 if self.delay > 0:

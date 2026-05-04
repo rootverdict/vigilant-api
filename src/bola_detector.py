@@ -149,8 +149,14 @@ class BOLADetector:
             # user_id=2 and causing false negatives.
             own_id = user.get('user_id')
             if own_id and isinstance(ur['body'], dict):
-                if any(isinstance(v, int) and v == own_id
-                       for v in ur['body'].values()):
+                # Match both int and string representations of own_id:
+                # some APIs return {"id": "2"} (string) rather than {"id": 2}.
+                own_id_str = str(own_id)
+                if any(
+                    (isinstance(v, int) and v == own_id) or
+                    (isinstance(v, str) and v == own_id_str)
+                    for v in ur['body'].values()
+                ):
                     continue   # user is reading their own data — not an IDOR
 
             findings.append(self._make_finding(
@@ -184,6 +190,9 @@ class BOLADetector:
         victim_id = resource_id
         attacker  = self.users[-1]
 
+        attacker_id     = attacker.get('user_id')
+        attacker_id_str = str(attacker_id) if attacker_id else None
+
         for params in [
             f'id={victim_id}&id={attacker.get("user_id", 999)}',
             f'id={attacker.get("user_id", 999)}&id={victim_id}',
@@ -193,18 +202,43 @@ class BOLADetector:
                 print(f'      [BOLA] Param Pollution  url={url}')
             resp = self._request(method, url, attacker['token'])
 
-            if resp and resp.status_code == 200 and resp.content:
-                findings.append(self._make_finding(
-                    check='Parameter Pollution IDOR',
-                    path=path,
-                    resource_id=resource_id,
-                    owner='victim',
-                    unauthorized_user=attacker['name'],
-                    status=resp.status_code,
-                    body_preview=str(self._safe_json(resp))[:300],
-                    severity='MEDIUM',
-                ))
-                break
+            if not (resp and resp.status_code == 200 and resp.content):
+                continue
+
+            body = self._safe_json(resp)
+
+            # Skip generic error responses — they carry no resource data.
+            if not body or self._is_error_body(body):
+                continue
+
+            # False-positive guard: if every ID-like field in the response
+            # matches the *attacker's* own user_id, the server returned the
+            # attacker's own resource (server used last/first value correctly
+            # but the "last value" was the attacker's own id).  That is NOT
+            # an IDOR — the attacker cannot access victim data.
+            if attacker_id and isinstance(body, dict):
+                id_vals = [
+                    v for k, v in body.items()
+                    if 'id' in k.lower() and v not in (None, '')
+                ]
+                if id_vals and all(
+                    (isinstance(v, int) and v == attacker_id) or
+                    (isinstance(v, str) and v == attacker_id_str)
+                    for v in id_vals
+                ):
+                    continue   # attacker is reading their own resource — not IDOR
+
+            findings.append(self._make_finding(
+                check='Parameter Pollution IDOR',
+                path=path,
+                resource_id=resource_id,
+                owner='victim',
+                unauthorized_user=attacker['name'],
+                status=resp.status_code,
+                body_preview=str(body)[:300],
+                severity='MEDIUM',
+            ))
+            break
 
         return findings
 
@@ -446,7 +480,7 @@ class BOLADetector:
         return re.sub(r'/\{[^}]+\}', '', path)
 
     def _request(self, method: str, url: str, token: str, **kwargs) -> requests.Response | None:
-        """Send a single HTTP request with optional rate-limit retry (429 backoff)."""
+        """Send a single HTTP request with rate-limit (429) and transient-error (5xx) retry."""
         headers = {'Authorization': f'Bearer {token}'}
         for attempt in range(3):
             try:
@@ -460,6 +494,13 @@ class BOLADetector:
                     wait = (2 ** attempt) * max(self.delay, 1.0)
                     if self.verbose:
                         print(f'      [BOLA] 429 rate-limited — retrying in {wait:.1f}s')
+                    time.sleep(wait)
+                    continue
+                if resp.status_code >= 500:
+                    # Transient server error — retry once before giving up.
+                    wait = (2 ** attempt) * max(self.delay, 0.5)
+                    if self.verbose:
+                        print(f'      [BOLA] {resp.status_code} server error — retrying in {wait:.1f}s')
                     time.sleep(wait)
                     continue
                 if self.delay > 0:
@@ -521,7 +562,23 @@ class BOLADetector:
         # is available, but "id" matching is high-confidence evidence of IDOR.
         id_keys = {k for k in real_keys if 'id' in k.lower()}
         if id_keys:
-            return any(b1[k] == b2[k] for k in id_keys)
+            # Compare both raw value AND string-coerced value so APIs that
+            # return IDs as strings ("id": "1") match correctly against
+            # integer resource_ids (1).  Use explicit equality checks to
+            # avoid accidental matches on None/""/false-y values.
+            def _ids_equal(v1, v2) -> bool:
+                # Exclude trivial/falsy sentinel values so None/None or ""/""
+                # are never treated as evidence of a shared resource ID.
+                if v1 is None or v2 is None or v1 == '' or v2 == '':
+                    return False
+                if v1 == v2:
+                    return True
+                # Cross-type string comparison: int 1 == str "1"
+                try:
+                    return str(v1) == str(v2)
+                except Exception:
+                    return False
+            return any(_ids_equal(b1[k], b2[k]) for k in id_keys)
 
         # No explicit ID field — require ≥2 matching non-trivial values to
         # reduce false positives from resources with only a single shared field.

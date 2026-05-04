@@ -94,9 +94,9 @@ Targets: AWS IMDSv1, GCP, Azure metadata endpoints.
 Severity: **CRITICAL**
 
 #### Blind SSRF
-Injects your Burp Collaborator or ngrok callback URL. If the server accepts the request without blocking it, logs a potential finding. Requires out-of-band confirmation via your listener.
+Injects your Burp Collaborator or ngrok callback URL and checks for an in-band reflection of the URL in the server response body. This is a **weak, unconfirmed signal only** — a server may fetch the URL without echoing it back. Confirmation requires an actual DNS/HTTP hit on your out-of-band listener.
 Skipped entirely if `--callback` is not provided.
-Severity: **HIGH**
+Severity: **LOW** (unconfirmed in-band signal — escalate to HIGH/CRITICAL only after OOB listener confirms outbound request)
 
 #### SSRF via Redirect / Filter Bypass
 Injects URLs that bypass IP-based filters by using alternative representations:
@@ -122,13 +122,15 @@ Severity: **HIGH**
 
 ### 5. OAuth Flaw Detector — 5 Sub-Checks
 
-| Check | What it tests | Severity |
-|-------|--------------|----------|
-| Missing state parameter | Auth request without `state` → CSRF vulnerability | HIGH |
-| Token leakage in URL | `access_token` in URL fragment/query → Referer header leak | HIGH |
-| Improper scope validation | Request `read:own`, check if server grants `admin`/`write`/`read:all` | HIGH |
-| Authorization code reuse | Same auth code submitted twice → RFC 6749 violation | HIGH |
-| Open redirect abuse | Unregistered `redirect_uri` accepted → auth code theft | CRITICAL |
+| Check | What it tests | Severity | Notes |
+|-------|--------------|----------|-------|
+| Missing state parameter | Auth request without `state` → CSRF vulnerability | HIGH | General |
+| Token leakage in URL | `access_token` in URL fragment/query → Referer header leak | HIGH | Mock-server only † |
+| Improper scope validation | Request `read:own`, check if server grants `admin`/`write`/`read:all` | HIGH | General |
+| Authorization code reuse | Same auth code submitted twice → RFC 6749 violation | HIGH | Mock-server only † |
+| Open redirect abuse | Unregistered `redirect_uri` accepted → auth code theft | CRITICAL | General |
+
+> **†  Mock-server only:** The "Token Leakage" and "Authorization Code Reuse" checks use synthetic payloads (`grant_type=implicit_test`, a hardcoded test code) that only match the Vigilant-API mock server.  Against a real OAuth server these checks will return no findings — a negative result does **not** confirm the server is secure.  Full coverage for these checks requires browser automation (Selenium/Playwright) to capture live codes; that is planned for V2.
 
 Also runs JWT algorithm checks on every user token provided:
 - `alg=none` → **CRITICAL** (unsigned tokens accepted)
@@ -144,7 +146,8 @@ evidence_20240115_143022_BOLA_IDOR_A1B2C3D4.json
 Each file contains:
 - `metadata` — finding ID (UUID short), timestamp, tool version
 - `vulnerability` — type, check name, severity, endpoint, parameter, resource ID
-- `evidence` — payload used, HTTP status code, response body preview
+- `http` — reconstructed request (endpoint, injected param, injected value, curl-style reproduction hint) and response (status code, body preview) for manual reproduction
+- `evidence` — raw payload, HTTP status code, response body preview
 - `description` — human-readable explanation of the vulnerability
 - `remediation` — specific fix guidance
 
@@ -600,9 +603,11 @@ Add the URL to the appropriate list constant in `SSRFDetector`:
 ## Limitations (V1)
 
 - No support for GraphQL or gRPC APIs (REST/OpenAPI only)
-- BOLA checks rely on the spec having path/query parameters declared — undocumented parameters are not discovered
-- OAuth checks require a reachable authorization server
-- Blind SSRF confirmation requires an external out-of-band listener (Burp Collaborator, ngrok, interactsh)
+- No support for external `$ref` in OpenAPI specs (e.g. `./other.yaml#/...` or `http://...`); in-document `#/` refs are resolved automatically
+- BOLA Simple IDOR tests path parameters only — query-string-only object IDs (e.g. `GET /export?id=1`) are covered by the Parameter Pollution check, not Simple IDOR
+- BOLA checks rely on the spec having parameters declared — undocumented parameters are not discovered
+- OAuth checks require a reachable authorization server; "Token Leakage" and "Code Reuse" checks are effective only against the bundled mock server (see OAuth section above)
+- Blind SSRF detection is an in-band signal only — a negative result does not rule out blind SSRF; use an out-of-band listener (Burp Collaborator, ngrok, interactsh) for confirmation
 - No built-in support for multi-step flows or stateful test sequences
 - Rate limiting is uniform (same delay for all requests); no adaptive throttling
 
