@@ -16,7 +16,7 @@ It includes:
 import json
 import os
 from datetime import datetime, timezone
-from jinja2 import Template
+from jinja2 import Environment
 
 
 HTML_TEMPLATE = """<!DOCTYPE html>
@@ -82,7 +82,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     <tr>
       <td><span class="code">{{ f.metadata.finding_id }}</span></td>
       <td>{{ vuln.type }}</td>
-      <td>{{ vuln.check }}</td>
+      <td>{{ vuln.check }}{% if 'Code Reuse' in vuln.check or 'Token Leakage' in vuln.check %} <span style="font-size:0.7rem;background:#744210;color:#f6e05e;padding:1px 6px;border-radius:4px;">mock-server only</span>{% endif %}</td>
       <td><span class="badge badge-{{ vuln.severity }}">{{ vuln.severity }}</span></td>
       <td>
         <span class="code">{{ vuln.endpoint or '—' }}</span>
@@ -155,7 +155,8 @@ class ReportGenerator:
             output_file = os.path.join(self.output_dir, 'report.html')
 
         counts   = self._build_summary(findings)
-        template = Template(HTML_TEMPLATE)
+        env      = Environment(autoescape=True)
+        template = env.from_string(HTML_TEMPLATE)
         output_dir = os.path.dirname(output_file)
 
         rendered_findings = []
