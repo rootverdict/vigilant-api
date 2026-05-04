@@ -91,7 +91,7 @@ class BOLADetector:
 
         # Indirect reference only applies to paths that have a {param} to encode.
         # Without a placeholder, re.sub has nothing to replace — the URL stays
-        # identical across all encodings, so all 5 requests go to the same
+        # identical across all encodings, so all 4 requests go to the same
         # endpoint with no useful test being performed.
         if resource_ids and '{' in path:
             findings += self._indirect_reference(method, path, resource_ids[0])

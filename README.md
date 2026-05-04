@@ -60,7 +60,7 @@ Tests 19 field name patterns in both snake_case and camelCase:
 Severity: **HIGH**
 
 #### Indirect Reference Enumeration
-Encodes the resource ID in 5 predictable formats and tests each:
+Encodes the resource ID in 4 predictable formats and tests each:
 
 | Encoding | Example (ID = 1) |
 |----------|-----------------|
@@ -249,7 +249,7 @@ cd vigilant-api
 pip install -r requirements.txt
 ```
 
-Or install as an editable package (also installs the `vigilant-api` CLI entry point):
+Or install as an editable package (also installs the `vigilant-api` CLI entry point defined in `pyproject.toml`):
 
 ```bash
 pip install -e .
