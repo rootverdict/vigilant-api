@@ -1,0 +1,195 @@
+openapi: "3.0.3"
+info:
+  title: DummyJSON API — Vigilant-API Test Target
+  description: >
+    Public fake REST API at dummyjson.com.
+    Used to demonstrate Vigilant-API against a real external target.
+    DummyJSON is intentionally open — it will trigger BOLA/IDOR and JWT findings.
+  version: "1.0.0"
+
+servers:
+  - url: https://dummyjson.com
+
+paths:
+
+  # ── User resources — BOLA targets ──────────────────────────────────
+
+  /users/{id}:
+    get:
+      summary: Get user by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      security:
+        - BearerAuth: []
+    put:
+      summary: Update user by ID (mass assignment probe)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      security:
+        - BearerAuth: []
+    patch:
+      summary: Partial update user by ID (mass assignment probe)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      security:
+        - BearerAuth: []
+
+  /users/{id}/posts:
+    get:
+      summary: Get posts belonging to a user
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      security:
+        - BearerAuth: []
+
+  /users/{id}/todos:
+    get:
+      summary: Get todos belonging to a user
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      security:
+        - BearerAuth: []
+
+  /users/{id}/carts:
+    get:
+      summary: Get carts belonging to a user
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      security:
+        - BearerAuth: []
+
+  # ── Post resources — BOLA targets ─────────────────────────────────
+
+  /posts/{id}:
+    get:
+      summary: Get post by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      security:
+        - BearerAuth: []
+    put:
+      summary: Update post by ID (mass assignment probe)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      security:
+        - BearerAuth: []
+
+  /posts/{id}/comments:
+    get:
+      summary: Get comments for a post
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      security:
+        - BearerAuth: []
+
+  # ── Cart resources — BOLA targets ─────────────────────────────────
+
+  /carts/{id}:
+    get:
+      summary: Get cart by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      security:
+        - BearerAuth: []
+
+  # ── Todo resources — BOLA targets ─────────────────────────────────
+
+  /todos/{id}:
+    get:
+      summary: Get todo by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      security:
+        - BearerAuth: []
+
+  # ── Auth ──────────────────────────────────────────────────────────
+
+  /auth/me:
+    get:
+      summary: Get currently authenticated user
+      security:
+        - BearerAuth: []
+
+  /auth/refresh:
+    post:
+      summary: Refresh access token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                refreshToken:
+                  type: string
+      security:
+        - BearerAuth: []
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
