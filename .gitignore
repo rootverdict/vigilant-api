@@ -14,3 +14,4 @@ dist/
 build/
 *.zip
 .env
+VIGILANT_API_COMPLETE_PROJECT_PLACEMENT_HANDBOOK.md

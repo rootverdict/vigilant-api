@@ -64,12 +64,6 @@ class Scanner:
                 'Add a token to your tokens file.'
             )
 
-        if 'bola' not in self.skip and len(users) < 2:
-            raise ValueError(
-                '[ERROR] At least 2 users required for differential BOLA testing. '
-                'Add a second user to your tokens file.'
-            )
-
         # Common options forwarded to all detectors
         det_opts = dict(
             delay   = config.get('delay', 0.0),
@@ -147,7 +141,9 @@ class Scanner:
             auth_options = self._get_auth_options(security)
 
             # --- BOLA / IDOR ---
-            anonymous_allowed = security == [] or bool(security and {} in security)
+            # No operation/root security declaration means the operation is
+            # public. An empty requirement is the explicit anonymous form.
+            anonymous_allowed = security is None or security == [] or bool(security and {} in security)
             if 'bola' not in self.skip and not anonymous_allowed:
                 if not self.bola:
                     raise ValueError(
@@ -193,14 +189,15 @@ class Scanner:
 
         # ── JWT algorithm checks ───────────────────────────────────────
         # Runs independently of --skip oauth: JWT header inspection applies to
-        # any Bearer token (not just OAuth-issued ones), so skipping the OAuth
-        # server probes should not suppress these token-level checks.
+        # Bearer and OAuth access tokens, so skipping the OAuth server probes
+        # should not suppress these token-level checks.
         # Use --skip jwt to explicitly suppress them.
         if 'jwt' not in self.skip:
             for user in self.config['users']:
-                if str(user.get('scheme', 'bearer')).lower() not in ('', 'bearer'):
+                scheme = str(user.get('scheme') or user.get('auth_type') or 'bearer').lower()
+                if scheme not in ('bearer', 'oauth', 'oauth2', 'openidconnect', 'openid_connect'):
                     continue
-                token   = user.get('token', '')
+                token = user.get('token') or user.get('access_token', '')
                 finding = AuthHandler.check_jwt_algorithm(token)
                 if finding:
                     finding['endpoint'] = f'Token for user: {user["name"]}'

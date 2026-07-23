@@ -26,7 +26,7 @@ class OpenAPIParser:
         self._origins: dict[int, tuple[dict, str]] = {}
         try:
             with open(spec_file, encoding='utf-8') as f:
-                if spec_file.endswith(('.yaml', '.yml')):
+                if spec_file.lower().endswith(('.yaml', '.yml')):
                     self.spec = yaml.safe_load(f)
                 else:
                     self.spec = json.load(f)
@@ -159,7 +159,7 @@ class OpenAPIParser:
             try:
                 if ref_path not in self._document_cache:
                     with open(ref_path, encoding='utf-8') as handle:
-                        if ref_path.endswith(('.yaml', '.yml')):
+                        if ref_path.lower().endswith(('.yaml', '.yml')):
                             loaded = yaml.safe_load(handle)
                         else:
                             loaded = json.load(handle)

@@ -377,6 +377,9 @@ def transfer_secure():
     data = request.get_json() or {}
     from_id = data.get('from_account_id')
 
+    if not isinstance(from_id, int):
+        return jsonify({'error': 'from_account_id must be an integer'}), 400
+
     account = ACCOUNTS.get(from_id)
     if not account:
         return jsonify({'error': 'Account not found'}), 404
@@ -390,4 +393,6 @@ if __name__ == '__main__':
     print('\n  🛡️  Vigilant-API Mock Server')
     print('  ⚠️   This server is INTENTIONALLY VULNERABLE for testing purposes')
     print('  Running on http://localhost:5000\n')
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    # Keep the deliberately vulnerable training server bound to localhost and
+    # never expose Werkzeug's interactive debugger.
+    app.run(debug=False, use_reloader=False, host='127.0.0.1', port=5000)

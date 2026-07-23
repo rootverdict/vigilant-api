@@ -13,9 +13,18 @@ Usage:
 import json
 import os
 import sys
+from typing import TypedDict
+
 import requests
 
-USERS = [
+
+class UserCredential(TypedDict):
+    name: str
+    password: str
+    user_id: int
+
+
+USERS: list[UserCredential] = [
     {"name": "emilys",   "password": "emilyspass",   "user_id": 1},
     {"name": "michaelw", "password": "michaelwpass",  "user_id": 2},
     {"name": "sophiab",  "password": "sophiabpass",   "user_id": 3},

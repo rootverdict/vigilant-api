@@ -97,6 +97,14 @@ class TestGetBaseUrl:
         base_url = OpenAPIParser(str(f)).get_base_url()
         assert base_url == 'http://localhost:5000'
 
+    def test_uppercase_yaml_extension_is_parsed_as_yaml(self, tmp_path):
+        f = tmp_path / 'OPENAPI.YAML'
+        f.write_text(MINIMAL_SPEC, encoding='utf-8')
+
+        parser = OpenAPIParser(str(f))
+
+        assert parser.get_base_url() == 'http://localhost:5000'
+
 
 class TestGetEndpoints:
     def test_endpoint_count(self, parser):

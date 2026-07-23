@@ -178,6 +178,42 @@ class TestParameterAwareProbes:
         assert not detector._body_contains_id({'data': {'amount': 4}}, 4)
 
 
+class TestIndirectReference:
+    @staticmethod
+    def _response(body):
+        response = MagicMock()
+        response.status_code = 200
+        response.content = b'json'
+        response.json.return_value = body
+        return response
+
+    def test_generic_success_response_is_not_reported(self, detector):
+        response = self._response({'name': 'generic', 'value': 'welcome'})
+
+        with patch.object(detector, '_request', return_value=response):
+            findings = detector._indirect_reference('GET', '/objects/{id}', 1, 'id')
+
+        assert findings == []
+
+    def test_cross_user_encoded_resource_is_reported(self, detector):
+        response = self._response({'id': 7, 'owner_id': 1, 'name': 'Invoice'})
+
+        with patch.object(detector, '_request', return_value=response):
+            findings = detector._indirect_reference('GET', '/objects/{id}', 7, 'id')
+
+        assert len(findings) == 1
+        assert findings[0]['owner'] == 'alice'
+        assert findings[0]['unauthorized_user'] == 'bob'
+
+    def test_attackers_own_resource_is_not_reported(self, detector):
+        response = self._response({'id': 2, 'owner_id': 2, 'name': 'Own record'})
+
+        with patch.object(detector, '_request', return_value=response):
+            findings = detector._indirect_reference('GET', '/objects/{id}', 1, 'id')
+
+        assert findings == []
+
+
 # ── _safe_json ────────────────────────────────────────────────────────────────
 
 class TestSafeJson:

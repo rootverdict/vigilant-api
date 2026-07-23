@@ -440,6 +440,28 @@ class BOLADetector:
             if resp and resp.status_code == 200 and resp.content:
                 body = self._safe_json(resp)
                 if body and not self._is_error_body(body):
+                    # A successful response alone does not prove cross-user
+                    # access: some APIs return a generic object or the caller's
+                    # own resource for unknown references. Require the response
+                    # to identify both the requested resource and a different,
+                    # known owner before reporting an IDOR.
+                    owner = self._identify_owner(
+                        path,
+                        resource_id,
+                        {
+                            attacker['name']: {
+                                'status': resp.status_code,
+                                'body': body,
+                                'size': len(resp.content),
+                            },
+                        },
+                    )
+                    if (
+                        owner is None
+                        or self._is_authorized_user(attacker, owner, resource_id)
+                        or not self._body_contains_id(body, resource_id)
+                    ):
+                        continue
                     findings.append({
                         'type':              'BOLA/IDOR',
                         'method':            method,
@@ -448,7 +470,7 @@ class BOLADetector:
                         'severity':          'MEDIUM',
                         'endpoint':          path,
                         'resource_id':       resource_id,
-                        'owner':             'victim',
+                        'owner':             owner['name'],
                         'unauthorized_user': attacker['name'],
                         'evidence': {
                             'status_code':   resp.status_code,
@@ -456,9 +478,10 @@ class BOLADetector:
                             'body_preview':  str(body)[:300],
                         },
                         'description': (
-                            f'Resource for ID {resource_id} accessible via encoded reference '
-                            f'"{encoded}". This encoding is predictable — an attacker can '
-                            'enumerate victim IDs by applying the same encoding to sequential integers.'
+                            f'Resource for ID {resource_id}, owned by "{owner["name"]}", was '
+                            f'accessed by "{attacker["name"]}" via encoded reference "{encoded}". '
+                            'This encoding is predictable — an attacker can enumerate victim IDs '
+                            'by applying the same encoding to sequential integers.'
                         ),
                         'remediation': (
                             'Use cryptographically random, non-guessable UUIDs (v4) as resource identifiers. '

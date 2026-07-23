@@ -107,7 +107,7 @@ class ForensicLogger:
 
         # Reconstruct a curl-style request line for quick reproduction
         if payload and param:
-            request_hint = f'[param] {param} = {payload[:200]}'
+            request_hint = f'[param] {param} = {str(payload)[:200]}'
         elif payload:
             request_hint = str(payload)[:200]
         else:
