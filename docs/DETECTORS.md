@@ -86,9 +86,9 @@ is not verified, so confirm the result manually before escalating its severity.
 ## SSRF
 
 The SSRF detector targets OpenAPI parameters whose names suggest a URL or
-destination, including `url`, `uri`, `redirect`, `callback`, `webhook`,
-`target`, `host`, and `proxy`. Query, path, header, and cookie parameters are
-supported.
+destination, including `url`, `uri`, `endpoint`, `redirect`, `callback`,
+`next`, `src`, `dest`, `target`, `webhook`, `proxy`, and `host`. Query, path,
+header, and cookie parameters are supported.
 
 | Check | Technique | Severity |
 |---|---|---|
@@ -190,4 +190,3 @@ strong, randomly generated secret.
 | Code reuse | Invalidate authorization codes after their first exchange |
 | Open redirect | Match redirect URIs against an exact preregistered allowlist |
 | JWT `alg=none` | Enforce an explicit signing-algorithm allowlist |
-

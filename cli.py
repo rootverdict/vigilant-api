@@ -122,11 +122,11 @@ def main(spec, tokens, ids, output, skip, callback, oauth_config_file,
     # ── Validate inputs ──────────────────────────────────────────────
     if not os.path.exists(spec):
         click.echo(f'[ERROR] Spec file not found: {spec}', err=True)
-        sys.exit(1)
+        sys.exit(2)
 
     if not os.path.exists(tokens):
         click.echo(f'[ERROR] Tokens file not found: {tokens}', err=True)
-        sys.exit(1)
+        sys.exit(2)
 
     # ── Load tokens ──────────────────────────────────────────────────
     try:
@@ -134,42 +134,42 @@ def main(spec, tokens, ids, output, skip, callback, oauth_config_file,
             users = json.load(f)
     except json.JSONDecodeError as e:
         click.echo(f'[ERROR] Tokens file contains invalid JSON: {e}', err=True)
-        sys.exit(1)
+        sys.exit(2)
     if not isinstance(users, list) or not users:
         click.echo('[ERROR] Tokens file must be a non-empty JSON array.', err=True)
-        sys.exit(1)
+        sys.exit(2)
     for i, u in enumerate(users):
         if not isinstance(u, dict):
             click.echo(f'[ERROR] Token entry {i} must be a JSON object.', err=True)
-            sys.exit(1)
+            sys.exit(2)
         validation_error = _validate_user_entry(u, i)
         if validation_error:
             click.echo(f'[ERROR] {validation_error}', err=True)
-            sys.exit(1)
+            sys.exit(2)
 
     # ── Load optional OAuth config ────────────────────────────────────
     oauth_config = None
     if oauth_config_file:
         if not os.path.exists(oauth_config_file):
             click.echo(f'[ERROR] OAuth config file not found: {oauth_config_file}', err=True)
-            sys.exit(1)
+            sys.exit(2)
         try:
             with open(oauth_config_file, encoding='utf-8') as f:
                 oauth_config = json.load(f)
         except json.JSONDecodeError as e:
             click.echo(f'[ERROR] OAuth config file contains invalid JSON: {e}', err=True)
-            sys.exit(1)
+            sys.exit(2)
         validation_error = _validate_oauth_config(oauth_config)
         if validation_error:
             click.echo(f'[ERROR] {validation_error}', err=True)
-            sys.exit(1)
+            sys.exit(2)
 
     # ── Parse resource IDs ────────────────────────────────────────────
     try:
         resource_ids = [int(i.strip()) for i in ids.split(',')]
     except ValueError:
         click.echo('[ERROR] --ids must be comma-separated integers, e.g. 1,2,3', err=True)
-        sys.exit(1)
+        sys.exit(2)
 
     # ── Build config and run ──────────────────────────────────────────
     config = {
@@ -199,7 +199,7 @@ def main(spec, tokens, ids, output, skip, callback, oauth_config_file,
         scanner = Scanner(config)
     except ValueError as e:
         click.echo(str(e), err=True)
-        sys.exit(1)
+        sys.exit(2)
 
     try:
         result = scanner.run()
