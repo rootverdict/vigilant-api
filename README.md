@@ -2,8 +2,6 @@
 
 Automated API security scanner that detects logic-layer vulnerabilities across REST APIs using OpenAPI/Swagger specifications and multi-user differential testing.
 
-Built as part of the **32-Week AppSec Roadmap** by **rootverdict**.
-
 ---
 
 ## What It Does
@@ -694,7 +692,7 @@ Add the URL to the appropriate list constant in `SSRFDetector`:
 
 ## License
 
-[MIT](./LICENSE) · Built as part of a 32-Week AppSec Roadmap · Author: [rootverdict](https://github.com/rootverdict)
+[MIT](./LICENSE)
 
 ---
 
