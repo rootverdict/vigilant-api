@@ -47,8 +47,7 @@ class Scanner:
         """
         self.config       = config
         self.parser       = OpenAPIParser(config['spec_file'])
-        self.logger       = ForensicLogger(config.get('output_dir', 'reports'))
-        self.reporter     = ReportGenerator(config.get('output_dir', 'reports'))
+        self.endpoints    = self.parser.get_endpoints()
         self.resource_ids = config.get('resource_ids', [1, 2, 3, 4, 5])
         self.skip         = set(config.get('skip', []))
         self.verbose      = config.get('verbose', False)
@@ -63,6 +62,25 @@ class Scanner:
                 '[ERROR] At least 1 user token is required for SSRF and OAuth checks. '
                 'Add a token to your tokens file.'
             )
+
+        if (
+            'bola' not in self.skip
+            and len(users) < 2
+            and any(
+                not self._allows_anonymous(security)
+                and self._has_bola_surface(method, params)
+                for method, _path, params, security in self.endpoints
+            )
+        ):
+            raise ValueError(
+                '[ERROR] At least 2 users required for differential BOLA testing. '
+                'Add a second user to your tokens file.'
+            )
+
+        # Output directories are created only after all local configuration
+        # validation succeeds.
+        self.logger   = ForensicLogger(config.get('output_dir', 'reports'))
+        self.reporter = ReportGenerator(config.get('output_dir', 'reports'))
 
         # Common options forwarded to all detectors
         det_opts = dict(
@@ -98,6 +116,22 @@ class Scanner:
         else:
             self.oauth = None
 
+    @staticmethod
+    def _allows_anonymous(security: list | None) -> bool:
+        """Return True when an OpenAPI operation permits unauthenticated access."""
+        return security is None or security == [] or bool(security and {} in security)
+
+    @staticmethod
+    def _has_bola_surface(method: str, params: list) -> bool:
+        """Return True when an endpoint exposes an input suitable for a BOLA probe."""
+        has_path_param = any(param.get('in') == 'path' for param in params)
+        has_body = method in ('POST', 'PUT', 'PATCH')
+        has_query_id = any(
+            param.get('in') == 'query' and 'id' in param.get('name', '').lower()
+            for param in params
+        )
+        return has_path_param or has_body or has_query_id
+
     # ------------------------------------------------------------------ #
     #  Main entry point                                                    #
     # ------------------------------------------------------------------ #
@@ -109,7 +143,7 @@ class Scanner:
         """
         spec_file = self.config['spec_file']
         target    = self.parser.get_base_url()
-        endpoints = self.parser.get_endpoints()
+        endpoints = self.endpoints
 
         self.logger.log_scan_start(spec_file, target)
         _scan_start = _time.monotonic()
@@ -141,23 +175,18 @@ class Scanner:
             auth_options = self._get_auth_options(security)
 
             # --- BOLA / IDOR ---
-            # No operation/root security declaration means the operation is
-            # public. An empty requirement is the explicit anonymous form.
-            anonymous_allowed = security is None or security == [] or bool(security and {} in security)
+            anonymous_allowed = self._allows_anonymous(security)
             if 'bola' not in self.skip and not anonymous_allowed:
-                if not self.bola:
-                    raise ValueError(
-                        '[ERROR] BOLA checks require at least 2 users. '
-                        'Either add another token or skip BOLA with --skip bola.'
-                    )
                 # Run BOLA when any of these are true:
                 #   1. Path has any {param}    → Simple IDOR, Indirect Reference
                 #   2. Method accepts a body   → Body IDOR, Mass Assignment
                 #   3. Query param contains id → Parameter Pollution
-                any_path_params = [p for p in params if p['in'] == 'path']
-                has_body        = method in ('POST', 'PUT', 'PATCH')
-                has_query_id    = any('id' in p['name'].lower() for p in params if p['in'] == 'query')
-                if any_path_params or has_body or has_query_id:
+                if self._has_bola_surface(method, params):
+                    if not self.bola:
+                        raise ValueError(
+                            '[ERROR] BOLA checks require at least 2 users. '
+                            'Either add another token or skip BOLA with --skip bola.'
+                        )
                     findings = self.bola.test_endpoint(
                         method, path, self.resource_ids, params=params,
                         auth_scheme=auth_options,
