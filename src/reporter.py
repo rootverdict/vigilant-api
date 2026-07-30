@@ -82,7 +82,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     <tr>
       <td><span class="code">{{ f.metadata.finding_id }}</span></td>
       <td>{{ vuln.type }}</td>
-      <td>{{ vuln.check }}{% if 'Code Reuse' in vuln.check or 'Token Leakage' in vuln.check %} <span style="font-size:0.7rem;background:#744210;color:#f6e05e;padding:1px 6px;border-radius:4px;">mock-server only</span>{% endif %}</td>
+      <td>{{ vuln.check }}{% if f.evidence.mock_only %} <span style="font-size:0.7rem;background:#744210;color:#f6e05e;padding:1px 6px;border-radius:4px;">mock-server only</span>{% endif %}</td>
       <td><span class="badge badge-{{ vuln.severity }}">{{ vuln.severity }}</span></td>
       <td>
         <span class="code">{% if vuln.method %}{{ vuln.method }} {% endif %}{{ vuln.endpoint or '—' }}</span>

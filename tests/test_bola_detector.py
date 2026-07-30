@@ -4,7 +4,6 @@ tests/test_bola_detector.py
 Unit tests for BOLADetector helpers:
   - _bodies_similar      (fuzzy body comparison, including string-ID cross-type)
   - _is_error_body       (error response filter)
-  - _strip_path_params   (URL template resolution)
   - _safe_json           (JSON parse fallback)
 """
 
@@ -122,22 +121,6 @@ class TestIsErrorBody:
         # This is an edge case; we document, not change, current behaviour.
         result = detector._is_error_body({})
         assert isinstance(result, bool)   # just ensure no exception
-
-
-# ── _strip_path_params ────────────────────────────────────────────────────────
-
-class TestStripPathParams:
-
-    def test_replaces_single_param(self, detector):
-        # Strips '/{id}' segment entirely, leaving '/items' (no trailing slash)
-        assert detector._strip_path_params('/items/{id}') == '/items'
-
-    def test_replaces_multiple_params(self, detector):
-        # '/a/{x}/b/{y}' → strip '/{x}' → '/a/b/{y}' → strip '/{y}' → '/a/b'
-        assert detector._strip_path_params('/a/{x}/b/{y}') == '/a/b'
-
-    def test_no_params_unchanged(self, detector):
-        assert detector._strip_path_params('/health') == '/health'
 
 
 class TestParameterAwareProbes:
@@ -260,6 +243,112 @@ class TestActiveSafety:
         with patch.object(active, '_request', return_value=response):
             findings = active._body_idor('POST', '/transfer', 1, params)
         assert findings == []
+
+
+# ── Mass-assignment persistence verification ───────────────────────────────────
+
+class TestResolveReadEndpoint:
+
+    def _detector(self, read_paths, mapping=None):
+        return BOLADetector(
+            'http://localhost:5000', _USERS, active=True,
+            read_endpoints=[(p, []) for p in read_paths],
+            read_endpoint_map=mapping,
+        )
+
+    def test_explicit_map_wins(self):
+        d = self._detector(['/x'], mapping={'/account/update': '/account/{id}'})
+        assert d._resolve_read_endpoint('/account/update') == '/account/{id}'
+
+    def test_same_path_is_gettable(self):
+        d = self._detector(['/account/profile'])
+        assert d._resolve_read_endpoint('/account/profile') == '/account/profile'
+
+    def test_strips_action_suffix_to_base(self):
+        d = self._detector(['/account'])
+        assert d._resolve_read_endpoint('/account/update') == '/account'
+
+    def test_strips_action_suffix_to_collection_member(self):
+        d = self._detector(['/account/{id}'])
+        assert d._resolve_read_endpoint('/account/update') == '/account/{id}'
+
+    def test_no_match_returns_none(self):
+        d = self._detector(['/profile/{user_id}'])
+        assert d._resolve_read_endpoint('/user/update') is None
+
+
+class TestBodyFieldMatches:
+
+    def test_top_level_match(self):
+        assert BOLADetector._body_field_matches({'role': 'admin'}, 'role', 'admin')
+
+    def test_nested_match(self):
+        body = {'data': {'attrs': {'is_admin': True}}}
+        assert BOLADetector._body_field_matches(body, 'is_admin', True)
+
+    def test_value_mismatch(self):
+        assert not BOLADetector._body_field_matches({'role': 'customer'}, 'role', 'admin')
+
+    def test_missing_field(self):
+        assert not BOLADetector._body_field_matches({'name': 'x'}, 'role', 'admin')
+
+
+class TestMassAssignmentPersistence:
+
+    def _active(self, read_paths):
+        return BOLADetector(
+            'http://localhost:5000', _USERS, active=True,
+            read_endpoints=[(p, []) for p in read_paths],
+        )
+
+    def test_persisted_field_upgrades_to_high(self):
+        """Reflection + read-back confirmation → HIGH, persistence_confirmed True."""
+        active = self._active(['/account/profile'])
+        reflect = MagicMock(status_code=200, content=b'{"role":"admin"}')
+        reflect.json.return_value = {'role': 'admin'}
+        readback = MagicMock(status_code=200, content=b'{"role":"admin"}')
+        readback.json.return_value = {'role': 'admin'}
+
+        def fake_request(method, url, user, **kwargs):
+            return readback if method == 'GET' else reflect
+
+        with patch.object(active, '_request', side_effect=fake_request):
+            findings = active._mass_assignment('PATCH', '/account/profile')
+
+        assert len(findings) == 1
+        assert findings[0]['severity'] == 'HIGH'
+        assert findings[0]['evidence']['persistence_confirmed'] is True
+
+    def test_reflection_without_persistence_stays_medium(self):
+        """Echo-only server (no read-back match) → MEDIUM, persistence_confirmed False."""
+        active = self._active(['/account/profile'])
+        reflect = MagicMock(status_code=200, content=b'{"role":"admin"}')
+        reflect.json.return_value = {'role': 'admin'}
+        readback = MagicMock(status_code=200, content=b'{"role":"customer"}')
+        readback.json.return_value = {'role': 'customer'}   # not persisted
+
+        def fake_request(method, url, user, **kwargs):
+            return readback if method == 'GET' else reflect
+
+        with patch.object(active, '_request', side_effect=fake_request):
+            findings = active._mass_assignment('PATCH', '/account/profile')
+
+        assert len(findings) == 1
+        assert findings[0]['severity'] == 'MEDIUM'
+        assert findings[0]['evidence']['persistence_confirmed'] is False
+
+    def test_no_read_endpoint_stays_medium(self):
+        """No matching read endpoint → cannot verify → MEDIUM."""
+        active = self._active([])   # no GET endpoints known
+        reflect = MagicMock(status_code=200, content=b'{"role":"admin"}')
+        reflect.json.return_value = {'role': 'admin'}
+
+        with patch.object(active, '_request', return_value=reflect):
+            findings = active._mass_assignment('PATCH', '/user/update')
+
+        assert len(findings) == 1
+        assert findings[0]['severity'] == 'MEDIUM'
+        assert findings[0]['evidence']['persistence_confirmed'] is False
 
     def test_mass_assignment_uses_declared_method_only(self):
         active = BOLADetector('http://localhost:5000', _USERS, active=True)

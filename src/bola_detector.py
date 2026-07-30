@@ -49,10 +49,16 @@ class BOLADetector:
         'admin', 'administrator', 'root', 'superadmin', 'superuser', 'system',
     }
 
+    # Path segments that mark a write/action endpoint whose underlying resource
+    # is read back through the same base path (e.g. '/account/update' → '/account').
+    _ACTION_SUFFIXES = ('update', 'edit', 'modify', 'save', 'create', 'settings')
+
     def __init__(self, base_url: str, users: list,
                  delay: float = 0.0, verify: bool = True,
                  proxy: str = None, verbose: bool = False,
-                 active: bool = False, budget: RequestBudget = None):
+                 active: bool = False, budget: RequestBudget = None,
+                 read_endpoints: list = None,
+                 read_endpoint_map: dict = None):
         """
         base_url : e.g. 'http://localhost:5000'
         users    : [
@@ -72,6 +78,11 @@ class BOLADetector:
         self.verbose  = verbose
         self.active   = active
         self.budget   = budget
+        # GET endpoints as (path, params); used to confirm mass-assignment
+        # persistence with a follow-up read. read_endpoint_map lets a caller
+        # override the heuristic with explicit {write_path: read_path} pairs.
+        self._read_endpoints: list = read_endpoints or []
+        self._read_endpoint_map: dict = read_endpoint_map or {}
         self._auth_scheme: object = None
         self._auth_handlers: dict[
             tuple, AuthHandler | CompositeAuthHandler | AnonymousAuthHandler
@@ -551,32 +562,49 @@ class BOLADetector:
                     # Confirmed vulnerable: privileged field reflected back with sent value
                     for key, sent_val in payload.items():
                         if key in body and body[key] == sent_val:
+                            # Reflection alone is only MEDIUM. Attempt a follow-up
+                            # read to prove the value was actually persisted — a
+                            # confirmed persisted privilege field is HIGH.
+                            persisted = self._confirm_persistence(
+                                path, attacker, key, sent_val
+                            )
+                            severity = 'HIGH' if persisted else 'MEDIUM'
+                            if persisted:
+                                description = (
+                                    f'Server accepted privileged field "{key}" = {sent_val!r} '
+                                    f'via {method} AND a follow-up read confirmed the value was '
+                                    'persisted. This is a confirmed mass assignment vulnerability '
+                                    'allowing privilege escalation.'
+                                )
+                            else:
+                                description = (
+                                    f'Server accepted privileged field "{key}" = {sent_val!r} '
+                                    f'via {method} and reflected it in the immediate response. '
+                                    'NOTE: This check confirms reflection only — persistence was '
+                                    'not verified (no matching read endpoint, or the value did not '
+                                    'appear on read-back). Confirm manually that the value is stored.'
+                                )
+                            evidence: dict[str, object] = {
+                                'status_code':      resp.status_code,
+                                'method':           method,
+                                'payload':          payload,
+                                'reflected_field':  key,
+                                'reflected_value':  sent_val,
+                                'body_preview':     str(body)[:300],
+                                'persistence_confirmed': persisted,
+                            }
                             findings.append({
                                     'type':              'BOLA/IDOR',
                                     'method':            method,
                                     'check':             'Mass Assignment',
                                     'vulnerable':        True,
-                                    'severity':          'MEDIUM',
+                                    'severity':          severity,
                                     'endpoint':          path,
                                     'resource_id':       None,
                                     'owner':             'system',
                                     'unauthorized_user': attacker['name'],
-                                    'evidence': {
-                                        'status_code':      resp.status_code,
-                                        'method':           method,
-                                        'payload':          payload,
-                                        'reflected_field':  key,
-                                        'reflected_value':  sent_val,
-                                        'body_preview':     str(body)[:300],
-                                    },
-                                    'description': (
-                                        f'Server accepted privileged field "{key}" = {sent_val!r} '
-                                        f'via {method} and reflected it in the immediate response. '
-                                        'NOTE: This check confirms reflection only — persistence was not '
-                                        'verified. Confirm manually that the value is actually stored. '
-                                        'If confirmed persistent, this is a HIGH severity mass assignment '
-                                        'vulnerability allowing privilege escalation.'
-                                    ),
+                                    'evidence':          evidence,
+                                    'description':       description,
                                     'remediation': (
                                         'Apply an explicit allowlist (DTO pattern) of fields users '
                                         'are permitted to set. Never bind the raw request body '
@@ -588,6 +616,57 @@ class BOLADetector:
                             return findings   # one finding per endpoint is enough
 
         return findings
+
+    def _confirm_persistence(self, write_path: str, attacker: dict,
+                             field: str, value) -> bool:
+        """Read the resource back and check the privileged field actually stuck."""
+        read_path = self._resolve_read_endpoint(write_path)
+        if not read_path:
+            return False
+        url = self._build_url(read_path, attacker.get('user_id', 1))
+        if self.verbose:
+            print(f'      [BOLA] Mass Assignment persistence read  GET {url}  field={field}')
+        resp = self._request('GET', url, attacker)
+        if not (resp and resp.status_code == 200 and resp.content):
+            return False
+        body = self._safe_json(resp)
+        return self._body_field_matches(body, field, value)
+
+    def _resolve_read_endpoint(self, write_path: str) -> str | None:
+        """Find a GET endpoint that reads the resource mutated by ``write_path``."""
+        # 1. Explicit caller-supplied mapping wins.
+        mapped = self._read_endpoint_map.get(write_path)
+        if mapped:
+            return mapped
+
+        read_paths = [path for path, _params in self._read_endpoints]
+        # 2. The same path is itself GET-able (e.g. GET+PATCH /account/profile).
+        if write_path in read_paths:
+            return write_path
+        # 3. Strip a trailing action segment ('/account/update' → '/account')
+        #    and match the base directly or as a '/{id}' collection member.
+        segments = write_path.rstrip('/').split('/')
+        if segments and segments[-1].lower() in self._ACTION_SUFFIXES:
+            base = '/'.join(segments[:-1]) or '/'
+            if base in read_paths:
+                return base
+            for candidate in read_paths:
+                if candidate.startswith(base + '/{'):
+                    return candidate
+        return None
+
+    @classmethod
+    def _body_field_matches(cls, body, field: str, expected) -> bool:
+        """Return True when ``field`` appears anywhere in ``body`` with ``expected``."""
+        if isinstance(body, dict):
+            for key, child in body.items():
+                if key == field and child == expected:
+                    return True
+                if cls._body_field_matches(child, field, expected):
+                    return True
+        elif isinstance(body, list):
+            return any(cls._body_field_matches(item, field, expected) for item in body)
+        return False
 
     # ------------------------------------------------------------------ #
     #  Helpers                                                             #
@@ -709,21 +788,18 @@ class BOLADetector:
         resolved = re.sub(r'\{([^}]+)\}', replacement, path)
         return f'{self.base_url}{resolved}'
 
-    def _strip_path_params(self, path: str) -> str:
-        """Remove /{param} segments so the path can be used as a base URL for body/query checks.
-
-        e.g. '/transactions/{id}' → '/transactions'
-        """
-        return re.sub(r'/\{[^}]+\}', '', path)
-
     def _request(self, method: str, url: str, user: dict | str,
                  **kwargs) -> requests.Response | None:
         """Send a single HTTP request with rate-limit (429) and transient-error (5xx) retry."""
         identity = user.get('name', id(user)) if isinstance(user, dict) else user
         auth_key = (identity, repr(self._auth_scheme))
-        auth = self._auth_handlers.setdefault(
-            auth_key, build_auth_handler(user, self._auth_scheme)
-        )
+        # Build the handler once per identity. `setdefault` would eagerly
+        # rebuild it on every call (its default arg is always evaluated), so
+        # look up explicitly to actually reuse the cached handler.
+        auth = self._auth_handlers.get(auth_key)
+        if auth is None:
+            auth = build_auth_handler(user, self._auth_scheme)
+            self._auth_handlers[auth_key] = auth
         for attempt in range(3):
             try:
                 if self.budget and not self.budget.consume():

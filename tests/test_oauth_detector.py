@@ -66,8 +66,10 @@ class TestMockOnlyChecks:
     def test_code_reuse_is_mock_only(self):
         assert 'Authorization Code Reuse' in OAuthFlawDetector._MOCK_ONLY_CHECKS
 
-    def test_token_leakage_is_mock_only(self):
-        assert 'Token Leakage in URL / Referer' in OAuthFlawDetector._MOCK_ONLY_CHECKS
+    def test_token_leakage_not_mock_only(self):
+        # Token leakage now probes the real implicit grant — it works against a
+        # live server and is no longer a mock-only synthetic check.
+        assert 'Token Leakage in URL / Referer' not in OAuthFlawDetector._MOCK_ONLY_CHECKS
 
     def test_missing_state_not_mock_only(self):
         assert 'OAuth State Integrity Failure' not in OAuthFlawDetector._MOCK_ONLY_CHECKS
@@ -131,6 +133,127 @@ class TestRunAllChecks:
         mock_resp.json.return_value = {'scope': 'not_admin writer'}
         mock_req.return_value = mock_resp
         assert detector._check_improper_scope() == []
+
+    @patch('oauth_detector.requests.request')
+    def test_scope_check_fires_when_broad_scope_granted(self, mock_req, detector):
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.content = b'json'
+        mock_resp.json.return_value = {'scope': 'read:own admin write'}
+        mock_req.return_value = mock_resp
+
+        findings = detector._check_improper_scope()
+        assert len(findings) == 1
+        assert findings[0]['check'] == 'Improper Scope Validation'
+        assert findings[0]['severity'] == 'HIGH'
+        assert findings[0]['parameter'] == 'scope'
+        assert findings[0]['evidence']['granted_scope'] == 'admin read:own write'
+
+    @patch('oauth_detector.requests.request')
+    def test_token_leakage_fires_when_token_in_fragment(self, mock_req, detector):
+        # Implicit grant returns the token in the redirect fragment.
+        mock_resp = MagicMock()
+        mock_resp.status_code = 302
+        mock_resp.headers = {
+            'Location': (
+                'http://localhost/callback#access_token=leaked-token-123'
+                '&token_type=bearer'
+            )
+        }
+        mock_resp.url = 'http://localhost:5000/oauth/authorize'
+        mock_req.return_value = mock_resp
+
+        findings = detector._check_token_leakage_in_url()
+        assert len(findings) == 1
+        assert findings[0]['check'] == 'Token Leakage in URL / Referer'
+        assert findings[0]['severity'] == 'HIGH'
+        assert findings[0]['method'] == 'GET'
+        assert findings[0]['endpoint'] == detector.auth_url
+        assert findings[0]['evidence']['leaked_in'] == 'fragment'
+
+    @patch('oauth_detector.requests.request')
+    def test_token_leakage_fires_when_token_in_query(self, mock_req, detector):
+        # Token in the query string is an even worse variant — also flagged.
+        mock_resp = MagicMock()
+        mock_resp.status_code = 302
+        mock_resp.headers = {
+            'Location': 'http://localhost/callback?access_token=leaked-token-123'
+        }
+        mock_resp.url = 'http://localhost:5000/oauth/authorize'
+        mock_req.return_value = mock_resp
+
+        findings = detector._check_token_leakage_in_url()
+        assert len(findings) == 1
+        assert findings[0]['evidence']['leaked_in'] == 'query'
+
+    @patch('oauth_detector.requests.request')
+    def test_token_leakage_no_finding_when_token_absent(self, mock_req, detector):
+        # Implicit grant disabled → server redirects with an error, no token.
+        mock_resp = MagicMock()
+        mock_resp.status_code = 302
+        mock_resp.headers = {
+            'Location': 'http://localhost/callback?error=unsupported_response_type'
+        }
+        mock_resp.url = 'http://localhost:5000/oauth/authorize'
+        mock_req.return_value = mock_resp
+        assert detector._check_token_leakage_in_url() == []
+
+    @patch('oauth_detector.requests.request')
+    def test_code_reuse_fires_when_both_exchanges_succeed(self, mock_req, detector):
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_req.return_value = mock_resp
+
+        findings = detector._check_code_reuse()
+        assert len(findings) == 1
+        assert findings[0]['check'] == 'Authorization Code Reuse'
+        assert findings[0]['severity'] == 'HIGH'
+        assert findings[0]['parameter'] == 'code'
+        assert findings[0]['evidence']['response_1_status'] == 200
+        assert findings[0]['evidence']['response_2_status'] == 200
+
+    @patch('oauth_detector.requests.request')
+    def test_code_reuse_no_finding_when_second_exchange_rejected(self, mock_req, detector):
+        first = MagicMock(status_code=200)
+        second = MagicMock(status_code=400)
+        mock_req.side_effect = [first, second]
+        assert detector._check_code_reuse() == []
+
+    @patch('oauth_detector.requests.request')
+    def test_code_reuse_synthetic_is_flagged_mock_only(self, mock_req, detector):
+        # No auth_code supplied → synthetic code → evidence flags mock_only.
+        mock_req.return_value = MagicMock(status_code=200)
+        findings = detector._check_code_reuse()
+        assert findings[0]['evidence']['mock_only'] is True
+
+    @patch('oauth_detector.requests.request')
+    def test_code_reuse_real_code_is_not_mock_only(self, mock_req):
+        # A real auth_code turns this into a genuine test, not mock_only.
+        detector = OAuthFlawDetector(
+            auth_url='http://localhost:5000/oauth/authorize',
+            token_url='http://localhost:5000/oauth/token',
+            client_id='test-client', client_secret='test-secret',
+            redirect_uri='http://localhost/callback',
+            auth_code='real-code-xyz',
+        )
+        mock_req.return_value = MagicMock(status_code=200)
+        findings = detector._check_code_reuse()
+        assert len(findings) == 1
+        assert findings[0]['evidence']['mock_only'] is False
+        assert findings[0]['evidence']['code'] == 'real-code-xyz'
+
+    @patch('oauth_detector.requests.request')
+    def test_code_reuse_real_code_skipped_when_first_exchange_rejected(self, mock_req):
+        # Real code already spent/expired → first exchange fails → check skipped.
+        detector = OAuthFlawDetector(
+            auth_url='http://localhost:5000/oauth/authorize',
+            token_url='http://localhost:5000/oauth/token',
+            client_id='test-client', client_secret='test-secret',
+            redirect_uri='http://localhost/callback',
+            auth_code='expired-code',
+        )
+        mock_req.side_effect = [MagicMock(status_code=400), MagicMock(status_code=200)]
+        assert detector._check_code_reuse() == []
 
     @patch('oauth_detector.requests.request')
     def test_open_redirect_fires_on_evil_uri_in_location(self, mock_req, detector):

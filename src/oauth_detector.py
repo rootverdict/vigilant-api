@@ -24,6 +24,7 @@ class OAuthFlawDetector:
 
     def __init__(self, auth_url: str, token_url: str, client_id: str,
                  client_secret: str = '', redirect_uri: str = 'http://localhost/callback',
+                 auth_code: str = None,
                  verify: bool = True, proxy: str = None, verbose: bool = False,
                  delay: float = 0.0, active: bool = False,
                  budget: RequestBudget = None):
@@ -32,6 +33,11 @@ class OAuthFlawDetector:
         self.client_id     = client_id
         self.client_secret = client_secret
         self.redirect_uri  = redirect_uri
+        # A real, freshly-issued authorization code (captured manually from a
+        # browser flow) turns the code-reuse check into a genuine test against a
+        # live server. Without it the check falls back to a synthetic code that
+        # is only meaningful against the Vigilant-API mock server.
+        self.auth_code     = auth_code
         self.verify        = verify
         self.proxies       = {'http': proxy, 'https': proxy} if proxy else None
         self.verbose       = verbose
@@ -43,30 +49,34 @@ class OAuthFlawDetector:
     #  Entry point                                                         #
     # ------------------------------------------------------------------ #
 
-    # Checks that rely on synthetic payloads — effective only against the
-    # Vigilant-API mock server.  Against a real OAuth server they will return
-    # no findings (silent false-negative, NOT a false-positive).
+    # The code-reuse check falls back to a synthetic authorization code when no
+    # real one is supplied via `auth_code`.  In that fallback it is effective
+    # only against the Vigilant-API mock server (silent false-negative against a
+    # real server, NOT a false-positive).  Supplying `auth_code` makes it a
+    # genuine test.  The token-leakage check now probes the real implicit grant
+    # (`response_type=token`) and works against live servers, so it is no longer
+    # mock-only.
     _MOCK_ONLY_CHECKS = frozenset({
         'Authorization Code Reuse',
-        'Token Leakage in URL / Referer',
     })
 
     def run_all_checks(self) -> list:
-        if self.verbose:
+        if self.verbose and not self.auth_code:
             print(
-                '      [OAuth] NOTE: "Authorization Code Reuse" and '
-                '"Token Leakage in URL / Referer" checks use synthetic payloads '
-                'and are only effective against the Vigilant-API mock server. '
-                'A negative result against a real OAuth server does NOT confirm '
-                'those controls are implemented correctly.'
+                '      [OAuth] NOTE: the "Authorization Code Reuse" check is using '
+                'a synthetic code and is only reliable against the Vigilant-API '
+                'mock server. Supply "auth_code" in --oauth-config with a real, '
+                'freshly-issued code to test a live server.'
             )
         findings = []
+        # Read-only probes against the authorization endpoint — safe in any mode.
         findings += self._check_state_integrity()
+        findings += self._check_open_redirect()
+        findings += self._check_token_leakage_in_url()
+        # Token-endpoint probes that request/consume tokens — write-ish, gated.
         if self.active:
-            findings += self._check_token_leakage_in_url()
             findings += self._check_improper_scope()
             findings += self._check_code_reuse()
-        findings += self._check_open_redirect()
         return findings
 
     # ------------------------------------------------------------------ #
@@ -129,43 +139,73 @@ class OAuthFlawDetector:
 
     def _check_token_leakage_in_url(self) -> list:
         """
-        Implicit grant / fragment tokens in URL are leaked via Referer headers
-        when the page loads external resources.
-        Check if the token_url returns access_token in the URL fragment.
-        """
-        if self.verbose:
-            print(f'      [OAuth] Token leakage check  url={self.token_url}')
-        resp = self._request('POST', self.token_url, data={
-            'grant_type': 'implicit_test',
-            'client_id':  self.client_id,
-        })
+        Probe the OAuth 2.0 implicit grant (`response_type=token`). A server that
+        honours it returns the access token in the redirect URL — in the fragment
+        (classic implicit) or, worse, the query string. Tokens in the URL leak via
+        Referer headers, browser history, and server logs.
 
-        if resp:
-            url = resp.url
-            fragment = urlparse(url).fragment
-            if 'access_token=' in fragment or 'access_token=' in url:
-                return [self._make_finding(
-                    check='Token Leakage in URL / Referer',
-                    severity='HIGH',
-                    description=(
-                        'Access token found in the URL fragment or query string. '
-                        'If this page loads any external resource (analytics, fonts, ads), '
-                        'the token is leaked in the Referer header.'
-                    ),
-                    remediation='Use authorization code flow with PKCE instead of implicit flow. Never put tokens in URLs.',
-                    evidence={
-                        'status_code': resp.status_code,
-                        'body_preview': url,
-                        'request_data': {
-                            'grant_type': 'implicit_test',
-                            'client_id': self.client_id,
-                        },
-                        'leaking_url': url,
-                    },
-                    method='POST',
-                    endpoint=self.token_url,
-                )]
-        return []
+        This is a real check: it works against any authorization server. A server
+        that has disabled the implicit grant simply won't return a token in the
+        redirect, so no finding is raised (true negative, not a mock artefact).
+        """
+        params = {
+            'response_type': 'token',
+            'client_id':     self.client_id,
+            'redirect_uri':  self.redirect_uri,
+            'scope':         'read',
+            'state':         'vigilant-token-leak-check',
+        }
+        if self.verbose:
+            print(f'      [OAuth] Token leakage (implicit grant) check  url={self.auth_url}')
+        # allow_redirects=False so we read the 302 Location, where an implicit
+        # server places the token, instead of following it to the callback page.
+        resp = self._request('GET', self.auth_url, params=params, allow_redirects=False)
+        if not resp:
+            return []
+
+        location = resp.headers.get('Location', '')
+        parsed = urlparse(location)
+        # Token may sit in the fragment (spec-compliant implicit) or the query
+        # string (an even worse misconfiguration). Fall back to resp.url in case
+        # the server rendered the token into the final page URL directly.
+        carriers = {
+            'fragment': parsed.fragment,
+            'query': parsed.query,
+        }
+        leaked_in = next(
+            (where for where, value in carriers.items() if 'access_token=' in value),
+            None,
+        )
+        if leaked_in is None and 'access_token=' in (getattr(resp, 'url', '') or ''):
+            leaked_in = 'url'
+        if leaked_in is None:
+            return []
+
+        return [self._make_finding(
+            check='Token Leakage in URL / Referer',
+            severity='HIGH',
+            description=(
+                f'The server honours the implicit grant and returned an access token '
+                f'in the redirect {leaked_in}. Tokens in a URL leak through Referer '
+                'headers, browser history, and access logs.'
+            ),
+            remediation=(
+                'Disable the implicit grant. Use the authorization code flow with '
+                'PKCE and return tokens only in the token-endpoint response body, '
+                'never in a URL.'
+            ),
+            evidence={
+                'status_code': resp.status_code,
+                'payload': 'response_type=token',
+                'body_preview': location,
+                'request_params': params,
+                'leaked_in': leaked_in,
+                'response_location': location,
+            },
+            method='GET',
+            endpoint=self.auth_url,
+            parameter='response_type',
+        )]
 
     def _check_improper_scope(self) -> list:
         """
@@ -224,20 +264,20 @@ class OAuthFlawDetector:
         Use an authorization code twice. RFC 6749 requires servers to reject
         the second use AND revoke all tokens issued from that code.
 
-        Limitation — mock server only:
-          This check sends a hardcoded test code ('vigilant-test-reuse-code-12345').
-          It works against the Vigilant-API mock server (which accepts any code for
-          the authorization_code grant type) but will always return a false negative
-          against a real OAuth server, because the test code is not a valid code
-          issued by that server.
+        Two modes:
+          - Real (preferred): when a freshly-issued ``auth_code`` is supplied via
+            --oauth-config, the check exchanges *that* code twice. On a secure
+            server the first exchange succeeds and the second is rejected; if both
+            succeed the reuse vulnerability is genuinely confirmed.
+          - Synthetic fallback: with no ``auth_code`` the check sends a hardcoded
+            test code. This is reliable only against the Vigilant-API mock server
+            (which accepts any code) and is flagged ``mock_only`` in the evidence.
 
-          A full implementation would require automating the authorization code
-          flow: (1) redirect the user to the auth endpoint, (2) capture the code
-          from the callback redirect, (3) exchange it once, (4) try again. This
-          requires browser automation (Selenium / Playwright) and is out of scope
-          for v1. The check is retained for mock-server testing and documentation.
+        Fully automating code capture on a live server requires driving the
+        browser login/consent flow (Playwright/Selenium) and remains V2 scope.
         """
-        test_code = 'vigilant-test-reuse-code-12345'
+        is_real = bool(self.auth_code)
+        test_code = self.auth_code or 'vigilant-test-reuse-code-12345'
 
         payload = {
             'grant_type':    'authorization_code',
@@ -248,22 +288,42 @@ class OAuthFlawDetector:
         }
 
         if self.verbose:
-            print(f'      [OAuth] Code reuse check  url={self.token_url}')
+            mode = 'real code' if is_real else 'synthetic code'
+            print(f'      [OAuth] Code reuse check ({mode})  url={self.token_url}')
         resp1 = self._request('POST', self.token_url, data=payload)
         resp2 = self._request('POST', self.token_url, data=payload)
 
+        # With a real code, a rejected first exchange means the code was already
+        # spent or expired — the test could not run, so report nothing rather than
+        # a misleading negative.
+        if is_real and resp1 and resp1.status_code != 200:
+            if self.verbose:
+                print(
+                    f'      [OAuth] Supplied auth_code was not accepted '
+                    f'(HTTP {resp1.status_code}) — it may be expired or already used. '
+                    'Code-reuse check skipped.'
+                )
+            return []
+
         if resp1 and resp2 and resp1.status_code == 200 and resp2.status_code == 200:
+            if is_real:
+                description = (
+                    'The same authorization code was accepted twice. An attacker who '
+                    'intercepts a code (e.g. via Referer) can exchange it for a token '
+                    'even after the legitimate user has already used it. This was '
+                    'confirmed with a real, freshly-issued authorization code.'
+                )
+            else:
+                description = (
+                    'The same authorization code was accepted twice. '
+                    'NOTE: this used a synthetic test code and is reliable only against '
+                    'the Vigilant-API mock server. Supply a real code via '
+                    '--oauth-config "auth_code" to confirm against a live server.'
+                )
             return [self._make_finding(
                 check='Authorization Code Reuse',
                 severity='HIGH',
-                description=(
-                    'The same authorization code was accepted twice. '
-                    'An attacker who intercepts a code (e.g. via Referer) can exchange it for a token '
-                    'even after the legitimate user has already used it. '
-                    'NOTE: This check used a synthetic test code and is reliable only against the '
-                    'Vigilant-API mock server. Verify against a real OAuth server by manually '
-                    'capturing and replaying a live authorization code.'
-                ),
+                description=description,
                 remediation='Authorization codes must be single-use. Invalidate immediately upon first exchange. On second use, revoke all issued tokens.',
                 evidence={
                     'status_code': resp2.status_code,
@@ -276,6 +336,7 @@ class OAuthFlawDetector:
                     'code': test_code,
                     'response_1_status': resp1.status_code,
                     'response_2_status': resp2.status_code,
+                    'mock_only': not is_real,
                 },
                 method='POST',
                 endpoint=self.token_url,

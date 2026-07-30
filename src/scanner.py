@@ -92,7 +92,18 @@ class Scanner:
             budget  = self.budget,
         )
 
-        self.bola = BOLADetector(base_url, users, **det_opts) if len(users) >= 2 else None
+        # Read (GET) endpoints let the BOLA detector verify mass-assignment
+        # persistence with a follow-up read instead of trusting response reflection.
+        read_endpoints = [
+            (path, params) for method, path, params, _sec in self.endpoints
+            if method == 'GET'
+        ]
+        self.bola = BOLADetector(
+            base_url, users,
+            read_endpoints=read_endpoints,
+            read_endpoint_map=config.get('read_endpoint_map'),
+            **det_opts,
+        ) if len(users) >= 2 else None
         self.ssrf = SSRFDetector(config.get('callback_url'), **det_opts)
 
         # OAuth detector is optional (only if oauth_config provided)
@@ -110,7 +121,8 @@ class Scanner:
                 )
             # Filter to only the keys OAuthFlawDetector accepts — extra keys in the
             # JSON (e.g. comments, descriptions) would cause unexpected-kwarg errors.
-            _KNOWN_OAUTH_KEYS = {'auth_url', 'token_url', 'client_id', 'client_secret', 'redirect_uri'}
+            _KNOWN_OAUTH_KEYS = {'auth_url', 'token_url', 'client_id', 'client_secret',
+                                 'redirect_uri', 'auth_code'}
             filtered_oa = {k: v for k, v in oa.items() if k in _KNOWN_OAUTH_KEYS}
             self.oauth = OAuthFlawDetector(**filtered_oa, **det_opts)
         else:
@@ -182,11 +194,10 @@ class Scanner:
                 #   2. Method accepts a body   → Body IDOR, Mass Assignment
                 #   3. Query param contains id → Parameter Pollution
                 if self._has_bola_surface(method, params):
-                    if not self.bola:
-                        raise ValueError(
-                            '[ERROR] BOLA checks require at least 2 users. '
-                            'Either add another token or skip BOLA with --skip bola.'
-                        )
+                    # __init__ rejects a <2-user config whenever any endpoint
+                    # exposes a non-anonymous BOLA surface — exactly the condition
+                    # guarding this block — so self.bola is always set here.
+                    assert self.bola is not None
                     findings = self.bola.test_endpoint(
                         method, path, self.resource_ids, params=params,
                         auth_scheme=auth_options,

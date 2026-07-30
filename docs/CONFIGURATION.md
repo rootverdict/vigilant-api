@@ -133,6 +133,16 @@ For another authorization server:
 }
 ```
 
+### Optional keys
+
+| Key | Purpose |
+|---|---|
+| `auth_code` | A real, freshly-issued authorization code. When present, the code-reuse check exchanges *this* code twice against a live server instead of a synthetic one — turning it from a mock-only check into a genuine test. Capture it from a browser login, then run the scan promptly (codes are short-lived and single-use). |
+
+The token-leakage check needs no extra config: it probes the real implicit grant
+(`response_type=token`) against `auth_url` and flags any access token returned in
+the redirect URL.
+
 ## Scan recipes
 
 All examples use the source checkout. If installed with `pip install -e .`,

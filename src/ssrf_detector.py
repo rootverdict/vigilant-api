@@ -287,9 +287,13 @@ class SSRFDetector:
         """Send a single SSRF probe request with optional rate-limit retry (429 backoff)."""
         identity = user.get('name', id(user)) if isinstance(user, dict) else user
         auth_key = (identity, repr(self._auth_scheme))
-        auth = self._auth_handlers.setdefault(
-            auth_key, build_auth_handler(user, self._auth_scheme)
-        )
+        # Build the handler once per identity. `setdefault` would eagerly
+        # rebuild it on every call (its default arg is always evaluated), so
+        # look up explicitly to actually reuse the cached handler.
+        auth = self._auth_handlers.get(auth_key)
+        if auth is None:
+            auth = build_auth_handler(user, self._auth_scheme)
+            self._auth_handlers[auth_key] = auth
         for attempt in range(3):
             try:
                 if self.budget and not self.budget.consume():

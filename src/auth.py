@@ -146,20 +146,6 @@ class AuthHandler:
         kwargs['headers'] = headers
         return kwargs
 
-    def inspect_jwt(self, token: str | None = None) -> dict:
-        """
-        Decode a JWT WITHOUT verification to inspect its claims.
-        Useful for detecting weak algorithms (e.g. 'none') or missing claims.
-        Returns the decoded payload dict.
-        """
-        token = token or self._token
-        if not token:
-            return {}
-        try:
-            return jwt.decode(token, options={"verify_signature": False})
-        except Exception as e:
-            return {'error': str(e)}
-
     @staticmethod
     def check_jwt_algorithm(token: str) -> dict | None:
         """
@@ -175,7 +161,9 @@ class AuthHandler:
         except Exception:
             return None   # not a JWT (opaque token) — skip
 
-        alg = header.get('alg', '').lower()
+        # `alg` may be missing, null, or a non-string in a malformed/hostile
+        # token header — coerce defensively so a bad token can't crash the scan.
+        alg = str(header.get('alg') or '').lower()
 
         if alg == 'none':
             return {

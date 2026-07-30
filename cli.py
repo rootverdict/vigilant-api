@@ -111,8 +111,13 @@ def _validate_oauth_config(config) -> str | None:
 @click.option('--max-requests', default=1000, show_default=True,
               type=click.IntRange(min=1),
               help='Hard cap on HTTP requests sent during one scan')
+@click.option('--read-map', 'read_map', multiple=True, metavar='WRITE=READ',
+              help='Map a write endpoint to the GET endpoint that reads it back, for '
+                   'mass-assignment persistence checks (repeatable). '
+                   'e.g. --read-map /account/update=/account/{id}. '
+                   'Overrides the automatic heuristic pairing for that path.')
 def main(spec, tokens, ids, output, skip, callback, oauth_config_file,
-         delay, insecure, proxy, verbose, active, max_requests):
+         delay, insecure, proxy, verbose, active, max_requests, read_map):
     """
     \b
     Vigilant-API v1.0 — API Security Scanner
@@ -171,6 +176,19 @@ def main(spec, tokens, ids, output, skip, callback, oauth_config_file,
         click.echo('[ERROR] --ids must be comma-separated integers, e.g. 1,2,3', err=True)
         sys.exit(2)
 
+    # ── Parse read-endpoint map ───────────────────────────────────────
+    read_endpoint_map: dict[str, str] = {}
+    for entry in read_map:
+        write_path, sep, read_path = entry.partition('=')
+        if not sep or not write_path.strip() or not read_path.strip():
+            click.echo(
+                f'[ERROR] --read-map entry must be WRITE=READ, e.g. '
+                f'/account/update=/account/{{id}}: got "{entry}"',
+                err=True,
+            )
+            sys.exit(2)
+        read_endpoint_map[write_path.strip()] = read_path.strip()
+
     # ── Build config and run ──────────────────────────────────────────
     config = {
         'spec_file':    spec,
@@ -186,6 +204,7 @@ def main(spec, tokens, ids, output, skip, callback, oauth_config_file,
         'verbose':      verbose,
         'active':       active,
         'max_requests': max_requests,
+        'read_endpoint_map': read_endpoint_map or None,
     }
 
     if active:
@@ -205,6 +224,15 @@ def main(spec, tokens, ids, output, skip, callback, oauth_config_file,
         result = scanner.run()
     except (ValueError, OSError) as e:
         click.echo(f'[ERROR] Scan failed: {e}', err=True)
+        sys.exit(2)
+    except Exception as e:  # noqa: BLE001
+        # Last-resort guard: any unexpected failure during a scan (e.g. a
+        # network error escaping a detector) must exit with code 2 ("scan
+        # failed to complete"). Without this an uncaught traceback exits with
+        # Python's default code 1 — the signal the CI gate reserves for
+        # CRITICAL/HIGH findings — so an infrastructure failure would be
+        # misreported as a security finding.
+        click.echo(f'[ERROR] Scan failed unexpectedly: {e}', err=True)
         sys.exit(2)
 
     # Exit with non-zero code if critical/high findings exist (CI gate)

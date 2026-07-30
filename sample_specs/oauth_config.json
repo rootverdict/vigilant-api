@@ -1,7 +1,8 @@
 {
-  "auth_url":      "http://localhost:5000/oauth/authorize",
-  "token_url":     "http://localhost:5000/oauth/token",
+  "auth_url":      "http://127.0.0.1:5000/oauth/authorize",
+  "token_url":     "http://127.0.0.1:5000/oauth/token",
   "client_id":     "vigilant-test-client",
   "client_secret": "vigilant-test-secret",
-  "redirect_uri":  "http://localhost:5000/callback"
+  "redirect_uri":  "http://127.0.0.1:5000/callback",
+  "auth_code":     "mock-auth-code-abc123"
 }

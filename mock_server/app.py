@@ -90,6 +90,14 @@ ACCOUNTS = {
     2: {'id': 2, 'owner_id': 2, 'balance': 2500.00, 'account_no': 'ACC-002'},
 }
 
+# Mutable account profile used to demonstrate a mass-assignment vulnerability
+# that actually PERSISTS (unlike /user/update, which only echoes). A follow-up
+# GET reflects whatever the last PATCH stored — including privileged fields.
+ACCOUNT_PROFILE = {
+    'user_id': 1, 'name': 'alice', 'role': 'customer',
+    'tier': 'basic', 'verified': False,
+}
+
 
 def get_current_user():
     """Extract user from Authorization header."""
@@ -278,6 +286,23 @@ def update_user():
     return jsonify(merged)
 
 
+# ❌ VULNERABLE: Mass Assignment WITH persistence — PATCH stores every field
+#    (including privileged ones) into the server-side record, and GET reflects
+#    the stored state. This lets the scanner confirm persistence via read-back.
+@app.route('/account/profile', methods=['GET'])
+def get_account_profile():
+    require_auth()
+    return jsonify(ACCOUNT_PROFILE)
+
+
+@app.route('/account/profile', methods=['PATCH', 'PUT'])
+def update_account_profile():
+    require_auth()
+    data = request.get_json() or {}
+    ACCOUNT_PROFILE.update(data)   # ← persists ALL fields, no allowlist
+    return jsonify(ACCOUNT_PROFILE)
+
+
 # ── OAuth 2.0 vulnerable endpoints ───────────────────────────────────
 # Intentionally vulnerable OAuth server for testing OAuthFlawDetector.
 # Point --oauth-config at sample_specs/oauth_config.json to use these.
@@ -296,8 +321,20 @@ def oauth_authorize():
     redirect_uri  = request.args.get('redirect_uri', _REGISTERED_REDIRECT)
     state         = request.args.get('state')   # intentionally not required
 
-    if response_type != 'code' or client_id != _OAUTH_CLIENT_ID:
+    if client_id != _OAUTH_CLIENT_ID:
         return jsonify({'error': 'invalid_request'}), 400
+
+    # ❌ VULNERABLE: Implicit grant enabled — returns the access token in the
+    #   redirect FRAGMENT. Any page that then loads an external resource leaks
+    #   the token via the Referer header (and it also lands in browser history).
+    if response_type == 'token':
+        location = f'{redirect_uri}#access_token={_OAUTH_ACCESS_TOKEN}&token_type=bearer'
+        if state:
+            location += f'&state={state}'
+        return redirect(location, code=302)
+
+    if response_type != 'code':
+        return jsonify({'error': 'unsupported_response_type'}), 400
 
     # ← Open redirect: redirect_uri never validated against allowlist —
     #   any URI (including attacker-controlled) is accepted.
@@ -390,6 +427,16 @@ def transfer_secure():
 
 
 if __name__ == '__main__':
+    import sys
+    # On Windows the console (or a redirected stdout/log file) may use a
+    # non-UTF-8 codepage such as cp1252 that cannot encode the emoji below,
+    # which would raise UnicodeEncodeError and crash the server on startup.
+    # Degrade unencodable characters instead of aborting.
+    for _stream in (sys.stdout, sys.stderr):
+        try:
+            _stream.reconfigure(errors='backslashreplace')
+        except (AttributeError, ValueError):
+            pass
     print('\n  🛡️  Vigilant-API Mock Server')
     print('  ⚠️   This server is INTENTIONALLY VULNERABLE for testing purposes')
     print('  Running on http://localhost:5000\n')

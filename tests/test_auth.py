@@ -18,7 +18,7 @@ import jwt as _pyjwt
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 from auth import AuthHandler, build_auth_handler
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 
 
 # ── Token factory ─────────────────────────────────────────────────────────────
@@ -189,3 +189,61 @@ class TestRequestAuthentication:
         user = {'name': 'service', 'token': 'bearer-token'}
         options = [[], [{'type': 'http', 'scheme': 'bearer', '_name': 'BearerAuth'}]]
         assert build_auth_handler(user, options).apply() == {}
+
+
+class TestOAuthGrants:
+    """get_token() should perform the correct OAuth 2.0 grant for each credential shape."""
+
+    @staticmethod
+    def _resp(data: dict):
+        resp = MagicMock()
+        resp.json.return_value = data
+        resp.raise_for_status.return_value = None
+        return resp
+
+    def test_password_grant_requests_token_and_caches_refresh(self):
+        user = {
+            'name': 'alice', 'scheme': 'oauth2',
+            'username': 'alice', 'password': 'pw',
+            'client_id': 'cid', 'token_url': 'http://ts/token',
+        }
+        handler = AuthHandler.from_user(user)
+        with patch('auth.requests.post') as post:
+            post.return_value = self._resp({'access_token': 'AT', 'refresh_token': 'RT'})
+            token = handler.get_token()
+
+        assert token == 'AT'
+        sent = post.call_args.kwargs['data']
+        assert sent['grant_type'] == 'password'
+        assert sent['username'] == 'alice'
+        # A returned refresh token is cached for subsequent silent refresh.
+        assert handler.credentials['refresh_token'] == 'RT'
+
+    def test_refresh_grant_used_when_refresh_token_present(self):
+        user = {
+            'name': 'alice', 'scheme': 'oauth2',
+            'refresh_token': 'old-refresh',
+            'client_id': 'cid', 'token_url': 'http://ts/token',
+        }
+        handler = AuthHandler.from_user(user)
+        with patch('auth.requests.post') as post:
+            post.return_value = self._resp({'access_token': 'AT2', 'refresh_token': 'new-refresh'})
+            token = handler.get_token()
+
+        assert token == 'AT2'
+        assert post.call_args.kwargs['data']['grant_type'] == 'refresh_token'
+        assert handler.credentials['refresh_token'] == 'new-refresh'
+
+    def test_client_credentials_grant_when_no_user_or_refresh(self):
+        user = {
+            'name': 'svc', 'scheme': 'oauth2',
+            'client_id': 'cid', 'client_secret': 'sec',
+            'token_url': 'http://ts/token',
+        }
+        handler = AuthHandler.from_user(user)
+        with patch('auth.requests.post') as post:
+            post.return_value = self._resp({'access_token': 'AT3'})
+            token = handler.get_token()
+
+        assert token == 'AT3'
+        assert post.call_args.kwargs['data']['grant_type'] == 'client_credentials'

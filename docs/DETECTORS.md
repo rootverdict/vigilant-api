@@ -18,7 +18,7 @@ look for missing object-level authorization.
 | Parameter pollution | Sends an ID-like query parameter twice in both orderings | MEDIUM |
 | Body IDOR | Places another user's ID in POST/PUT request fields | HIGH |
 | Indirect reference | Tries predictable encodings of a resource ID | MEDIUM |
-| Mass assignment | Submits privileged fields and checks whether they are accepted | MEDIUM |
+| Mass assignment | Submits privileged fields; HIGH when persistence is confirmed via read-back, else MEDIUM | MEDIUM / HIGH |
 
 ### Simple IDOR
 
@@ -80,8 +80,14 @@ In active mode, POST, PUT, and PATCH bodies are tested with privileged fields:
 | Verification bypass | `verified`, `email_verified`, `is_verified` |
 | Tier escalation | `subscription`, `account_type`, `plan` |
 
-A MEDIUM finding means the response reflected the submitted value. Persistence
-is not verified, so confirm the result manually before escalating its severity.
+A **MEDIUM** finding means the response reflected the submitted value but
+persistence could not be confirmed (no matching read endpoint, or the value did
+not survive a read-back) — confirm manually before escalating.
+
+A **HIGH** finding means the value was also confirmed persisted: after the write,
+the detector reads the resource back through a paired GET endpoint (matched
+heuristically, or via an explicit `--read-map WRITE=READ` override) and finds the
+privileged field still set.
 
 ## SSRF
 
