@@ -68,7 +68,8 @@ class AuthHandler:
         if self.scheme in ('bearer', 'oauth2'):
             session.headers.update({'Authorization': f'Bearer {token}'})
         elif self.scheme == 'apikey':
-            name = str(self.credentials.get('api_key_name') or self.credentials.get('header_name', 'X-API-Key'))
+            name = str(self.credentials.get('api_key_name')
+                       or self.credentials.get('header_name', 'X-API-Key'))
             if self.credentials.get('api_key_in', 'header') == 'query':
                 session.params = {name: token}
             elif self.credentials.get('api_key_in') == 'cookie':
@@ -274,9 +275,12 @@ class AuthHandler:
 
     def _is_expired(self, token: str) -> bool:
         """
-        Try to decode the token and check 'exp' claim.
-        Returns True if expired or can't decode.
-        Only meaningful for JWTs.
+        Try to decode the token and check the 'exp' claim.
+
+        Returns True only when the token is a JWT with an 'exp' in the past.
+        A token that cannot be decoded is an opaque (non-JWT) token whose
+        lifetime we cannot inspect, so it is reported as not-expired and left
+        alone rather than triggering a needless refresh.
         """
         try:
             payload = jwt.decode(token, options={"verify_signature": False})

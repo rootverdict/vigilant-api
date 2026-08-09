@@ -44,9 +44,9 @@ def _make_jwt(header: dict, payload: dict = None) -> str:
     if alg == 'hs256':
         # Use PyJWT to produce a syntactically valid HS256 token.
         # Override the header to match exactly what the test supplies.
-        token = _pyjwt.encode(claims, 'dummy-secret-key-for-testing', algorithm='HS256',
-                               headers={k: v for k, v in header.items() if k != 'alg'})
-        return token   # already a str in PyJWT ≥ 2.0
+        # already a str in PyJWT >= 2.0
+        return _pyjwt.encode(claims, 'dummy-secret-key-for-testing', algorithm='HS256',
+                             headers={k: v for k, v in header.items() if k != 'alg'})
 
     h = _b64url(header)
     p = _b64url(claims)
@@ -247,3 +247,45 @@ class TestOAuthGrants:
 
         assert token == 'AT3'
         assert post.call_args.kwargs['data']['grant_type'] == 'client_credentials'
+
+
+class TestGetSession:
+    """get_session() bakes credentials into a reusable requests.Session.
+
+    The detectors use apply() instead, so these are the only tests exercising
+    this path — without them the whole method is unverified.
+    """
+
+    def test_bearer_sets_authorization_header(self):
+        session = AuthHandler('bearer', {'token': 'abc'}).get_session()
+        assert session.headers['Authorization'] == 'Bearer abc'
+
+    def test_oauth_access_token_sets_authorization_header(self):
+        handler = AuthHandler('oauth2', {'access_token': 'xyz'})
+        assert handler.get_session().headers['Authorization'] == 'Bearer xyz'
+
+    def test_api_key_defaults_to_header(self):
+        session = AuthHandler('apikey', {'key': 'secret'}).get_session()
+        assert session.headers['X-API-Key'] == 'secret'
+
+    def test_api_key_honours_custom_header_name(self):
+        session = AuthHandler(
+            'apikey', {'key': 'secret', 'api_key_name': 'X-Tenant-Key'},
+        ).get_session()
+        assert session.headers['X-Tenant-Key'] == 'secret'
+
+    def test_api_key_in_query_sets_session_params(self):
+        session = AuthHandler(
+            'apikey', {'key': 'secret', 'api_key_name': 'apikey', 'api_key_in': 'query'},
+        ).get_session()
+        assert session.params == {'apikey': 'secret'}
+
+    def test_api_key_in_cookie_sets_session_cookie(self):
+        session = AuthHandler(
+            'apikey', {'key': 'secret', 'api_key_name': 'sid', 'api_key_in': 'cookie'},
+        ).get_session()
+        assert session.cookies.get('sid') == 'secret'
+
+    def test_unsupported_scheme_is_rejected(self):
+        with pytest.raises(ValueError, match='Unsupported auth scheme'):
+            AuthHandler('basic', {'token': 'x'}).get_session()
