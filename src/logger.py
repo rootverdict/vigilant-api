@@ -13,6 +13,7 @@ All files are written to:  reports/evidence/
 """
 
 import json
+import re
 import uuid
 import os
 from datetime import datetime, timezone
@@ -42,7 +43,11 @@ class ForensicLogger:
         """
         finding_id   = str(uuid.uuid4())[:8].upper()
         timestamp    = datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')
-        vuln_type    = finding.get('type', 'UNKNOWN').replace('/', '_')
+        # Normalise the type into a filename-safe token: findings use values like
+        # 'BOLA/IDOR' and 'OAuth Flaw', and both the separator and the space make
+        # the resulting path awkward to glob in a CI artifact step.
+        raw_type     = finding.get('type') or 'UNKNOWN'
+        vuln_type    = re.sub(r'[^A-Za-z0-9]+', '_', str(raw_type)).strip('_') or 'UNKNOWN'
         filename     = f'evidence_{timestamp}_{vuln_type}_{finding_id}.json'
         filepath     = os.path.join(self.evidence_dir, filename)
 
