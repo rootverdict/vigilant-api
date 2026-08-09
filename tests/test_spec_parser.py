@@ -114,7 +114,7 @@ class TestGetEndpoints:
 
     def test_endpoint_tuple_structure(self, parser):
         endpoints = parser.get_endpoints()
-        for method, path, params, security in endpoints:
+        for method, path, params, _security in endpoints:
             assert isinstance(method, str)
             assert method.isupper()
             assert path.startswith('/')
@@ -310,3 +310,71 @@ class TestResolveRef:
         """), encoding='utf-8')
         params = OpenAPIParser(str(spec)).get_endpoints()[0][2]
         assert any(p['name'] == 'webhook_url' and p['in'] == 'body' for p in params)
+
+
+class TestMalformedSpecs:
+    """A malformed spec must degrade to a partial scan, never crash the run.
+
+    YAML coerces unquoted scalars, so a hand-written spec can put a bool or int
+    where the parser expects a string. Each case below crashed the whole scan
+    before being guarded.
+    """
+
+    def _parse(self, tmp_path, body, name='spec.yaml'):
+        spec = tmp_path / name
+        spec.write_text(
+            'openapi: "3.0.3"\ninfo: {title: T, version: "1"}\n' + textwrap.dedent(body),
+            encoding='utf-8',
+        )
+        return OpenAPIParser(str(spec))
+
+    def test_non_string_method_key_is_skipped(self, tmp_path):
+        """`true:` under a path parses as a bool, which has no .lower()."""
+        parser = self._parse(tmp_path, """
+            paths:
+              /x:
+                true: {}
+                get: {}
+        """)
+        methods = [m for m, _p, _params, _s in parser.get_endpoints()]
+        assert methods == ['GET']
+
+    def test_non_string_property_name_is_coerced(self, tmp_path):
+        """An unquoted numeric body-property key breaks '.'.join()."""
+        parser = self._parse(tmp_path, """
+            paths:
+              /x:
+                post:
+                  requestBody:
+                    content:
+                      application/json:
+                        schema: {properties: {1: {type: string}}}
+        """)
+        params = parser.get_endpoints()[0][2]
+        assert [p['name'] for p in params] == ['1']
+
+    def test_non_string_server_url_falls_back(self, tmp_path):
+        """A mapping where servers[0].url should be a string breaks re.sub()."""
+        with pytest.warns(UserWarning, match=r'servers\[0\]\.url'):
+            parser = self._parse(tmp_path, """
+                servers: [{url: {a: b}}]
+                paths: {}
+            """)
+        assert parser.get_base_url() == 'http://localhost:5000'
+
+    def test_unreadable_spec_raises_value_error(self, tmp_path):
+        """A path that exists but cannot be read must surface as ValueError.
+
+        The CLI maps ValueError to exit 2 ("scan failed"); an escaping OSError
+        would exit 1, which the CI gate reads as CRITICAL/HIGH findings.
+        """
+        unreadable = tmp_path / 'spec_dir'
+        unreadable.mkdir()
+        with pytest.raises(ValueError, match='Could not read spec file'):
+            OpenAPIParser(str(unreadable))
+
+    def test_non_utf8_spec_raises_value_error(self, tmp_path):
+        spec = tmp_path / 'spec.yaml'
+        spec.write_bytes(b'\xff\xfe\x00\x01openapi')
+        with pytest.raises(ValueError, match='not valid UTF-8'):
+            OpenAPIParser(str(spec))

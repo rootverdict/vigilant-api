@@ -7,8 +7,10 @@ Extracts: endpoints, parameters, security schemes, base URL.
 $ref support
 ------------
 In-document JSON Pointer refs (#/components/...) are resolved automatically
-before parameter extraction.  External file refs (./other.yaml) and HTTP refs
-are not supported and are silently skipped — log a warning in that case.
+before parameter extraction, as are local external-file refs (./other.yaml,
+optionally with a #/... fragment).  Remote HTTP(S) refs are deliberately not
+fetched — resolving them would make spec parsing perform network I/O — and are
+skipped with a warning, as is any ref that cannot be resolved.
 """
 
 import yaml
@@ -31,9 +33,17 @@ class OpenAPIParser:
                 else:
                     self.spec = json.load(f)
         except yaml.YAMLError as e:
-            raise ValueError(f'[ERROR] Failed to parse YAML spec file "{spec_file}": {e}')
+            raise ValueError(f'[ERROR] Failed to parse YAML spec file "{spec_file}": {e}') from e
         except json.JSONDecodeError as e:
-            raise ValueError(f'[ERROR] Failed to parse JSON spec file "{spec_file}": {e}')
+            raise ValueError(f'[ERROR] Failed to parse JSON spec file "{spec_file}": {e}') from e
+        except UnicodeDecodeError as e:
+            raise ValueError(f'[ERROR] Spec file "{spec_file}" is not valid UTF-8 text: {e}') from e
+        except OSError as e:
+            # The caller's os.path.exists() check only proves the path resolves —
+            # it may still be a directory or be unreadable. Surface it as ValueError
+            # so the CLI maps it to exit 2 ("scan failed") rather than letting an
+            # OSError escape as exit 1, the code reserved for CRITICAL/HIGH findings.
+            raise ValueError(f'[ERROR] Could not read spec file "{spec_file}": {e}') from e
 
         if not isinstance(self.spec, dict):
             raise ValueError(f'[ERROR] Spec file "{spec_file}" is empty or not a valid OpenAPI document.')
@@ -65,6 +75,11 @@ class OpenAPIParser:
             path_security = path_item.get('security')   or []
 
             for method, details in path_item.items():
+                # YAML coerces bare keys like `true:` and `1:` to non-string
+                # scalars, so a malformed spec can put a bool/int here. Skip
+                # anything that isn't a recognisable method name.
+                if not isinstance(method, str):
+                    continue
                 if method.lower() not in ('get', 'post', 'put', 'delete', 'patch',
                                            'head', 'options', 'trace'):
                     continue
@@ -122,6 +137,13 @@ class OpenAPIParser:
                 )
                 return 'http://localhost:5000'
             url = server.get('url', 'http://localhost:5000')
+            if not isinstance(url, str):
+                warnings.warn(
+                    'OpenAPI "servers[0].url" is not a string; falling back to '
+                    'http://localhost:5000.',
+                    stacklevel=2,
+                )
+                return 'http://localhost:5000'
             variables = server.get('variables')
             if not isinstance(variables, dict):
                 variables = {}
@@ -140,8 +162,8 @@ class OpenAPIParser:
             return re.sub(r'\{([^}]+)\}', replace_variable, url).rstrip('/')
         return 'http://localhost:5000'
 
-    def _resolve_ref(self, obj: dict, document: dict = None,
-                     base_dir: str = None, seen: set = None) -> dict:
+    def _resolve_ref(self, obj: dict, document: dict | None = None,
+                     base_dir: str | None = None, seen: set | None = None) -> dict:
         """Resolve local and local-file JSON References without network I/O."""
         ref = obj.get('$ref', '') if isinstance(obj, dict) else ''
         if not ref:
@@ -304,10 +326,13 @@ class OpenAPIParser:
                 properties.update(resolved_branch.get('properties') or {})
                 required_names.update(resolved_branch.get('required') or [])
 
-            for name, raw_child in properties.items():
+            for raw_name, raw_child in properties.items():
                 child = self._resolve_ref(raw_child or {})
                 if not isinstance(child, dict):
                     continue
+                # YAML turns an unquoted numeric/boolean property key into a
+                # non-string scalar; the dotted param name is built with join().
+                name = raw_name if isinstance(raw_name, str) else str(raw_name)
                 path = prefix + [name]
                 required = inherited_required or name in required_names
                 if child.get('properties') or child.get('allOf'):
