@@ -378,3 +378,160 @@ class TestMalformedSpecs:
         spec.write_bytes(b'\xff\xfe\x00\x01openapi')
         with pytest.raises(ValueError, match='not valid UTF-8'):
             OpenAPIParser(str(spec))
+
+
+class TestDefensiveParsing:
+    """A spec is untrusted input. These cases came from a fuzz corpus run against
+    the parser; three of them originally crashed the whole scan. Each asserts the
+    parser degrades to a partial result instead of raising.
+    """
+
+    HEAD = 'openapi: "3.0.3"\ninfo: {title: T, version: "1"}\n'
+
+    def _parse(self, tmp_path, body, name='s.yaml'):
+        spec = tmp_path / name
+        spec.write_text(self.HEAD + textwrap.dedent(body), encoding='utf-8')
+        return OpenAPIParser(str(spec))
+
+    def _endpoints(self, tmp_path, body, name='s.yaml'):
+        return self._parse(tmp_path, body, name).get_endpoints()
+
+    @pytest.mark.parametrize('name,body', [
+        ('paths_null',        'paths: null\n'),
+        ('paths_scalar',      'paths: "nope"\n'),
+        ('path_item_scalar',  'paths:\n  /x: "nope"\n'),
+        ('operation_is_list', 'paths:\n  /x:\n    get: [1, 2]\n'),
+        ('params_null',       'paths:\n  /x:\n    get:\n      parameters: null\n'),
+        ('param_bare_string', 'paths:\n  /x:\n    get:\n      parameters: ["oops"]\n'),
+        ('param_no_name',     'paths:\n  /x:\n    get:\n      parameters: [{in: query}]\n'),
+        ('param_no_in',       'paths:\n  /x:\n    get:\n      parameters: [{name: a}]\n'),
+        ('schema_is_string',  'paths:\n  /x:\n    get:\n'
+                              '      parameters: [{name: a, in: query, schema: "s"}]\n'),
+        ('body_null',         'paths:\n  /x:\n    post:\n      requestBody: null\n'),
+        ('content_scalar',    'paths:\n  /x:\n    post:\n'
+                              '      requestBody: {content: "nope"}\n'),
+        ('media_obj_scalar',  'paths:\n  /x:\n    post:\n      requestBody:\n'
+                              '        content: {application/json: "nope"}\n'),
+        ('props_null',        'paths:\n  /x:\n    post:\n      requestBody:\n'
+                              '        content:\n          application/json:\n'
+                              '            schema: {properties: null}\n'),
+        ('prop_child_null',   'paths:\n  /x:\n    post:\n      requestBody:\n'
+                              '        content:\n          application/json:\n'
+                              '            schema: {properties: {a: null}}\n'),
+        ('allOf_scalar',      'paths:\n  /x:\n    post:\n      requestBody:\n'
+                              '        content:\n          application/json:\n'
+                              '            schema: {allOf: "nope"}\n'),
+        ('allOf_member_str',  'paths:\n  /x:\n    post:\n      requestBody:\n'
+                              '        content:\n          application/json:\n'
+                              '            schema: {allOf: ["nope"]}\n'),
+        ('components_scalar', 'components: "nope"\npaths: {}\n'),
+        ('servers_empty',     'servers: []\npaths: {}\n'),
+        ('servers_null_item', 'servers: [null]\npaths: {}\n'),
+    ])
+    def test_malformed_input_does_not_raise(self, tmp_path, name, body):
+        parser = self._parse(tmp_path, body, f'{name}.yaml')
+        endpoints = parser.get_endpoints()
+        parser.get_base_url()
+        parser.get_security_schemes()
+        for _m, _p, params, _s in endpoints:
+            parser.get_url_params(params)
+
+    def test_non_object_server_falls_back(self, tmp_path):
+        with pytest.warns(UserWarning, match=r'servers\[0\]'):
+            parser = self._parse(tmp_path, 'servers: ["http://x"]\npaths: {}\n')
+        assert parser.get_base_url() == 'http://localhost:5000'
+
+    def test_server_variable_without_default_is_left_intact(self, tmp_path):
+        with pytest.warns(UserWarning, match='server variable'):
+            parser = self._parse(tmp_path, """
+                servers:
+                  - url: https://{region}.example.com
+                    variables: {region: {}}
+                paths: {}
+            """)
+        assert '{region}' in parser.get_base_url()
+
+    def test_components_scalar_yields_no_schemes(self, tmp_path):
+        parser = self._parse(tmp_path, 'components: "nope"\npaths: {}\n')
+        assert parser.get_security_schemes() == {}
+
+    def test_duplicate_parameters_are_deduplicated(self, tmp_path):
+        params = self._endpoints(tmp_path, """
+            paths:
+              /x:
+                parameters: [{name: id, in: path, schema: {type: integer}}]
+                get:
+                  parameters: [{name: id, in: path, schema: {type: integer}}]
+        """)[0][2]
+        assert [p['name'] for p in params] == ['id']
+
+    def test_unresolvable_ref_is_skipped(self, tmp_path):
+        with pytest.warns(UserWarning, match='Unresolvable'):
+            params = self._endpoints(tmp_path, """
+                paths:
+                  /x:
+                    get:
+                      parameters: [{$ref: "#/components/parameters/Nope"}]
+            """)[0][2]
+        assert params == []
+
+    def test_circular_ref_is_broken(self, tmp_path):
+        with pytest.warns(UserWarning):
+            self._endpoints(tmp_path, """
+                components:
+                  parameters:
+                    A: {$ref: "#/components/parameters/A"}
+                paths:
+                  /x:
+                    get:
+                      parameters: [{$ref: "#/components/parameters/A"}]
+            """)
+
+    def test_remote_ref_is_not_fetched(self, tmp_path):
+        with pytest.warns(UserWarning, match='Remote OpenAPI reference'):
+            self._endpoints(tmp_path, """
+                paths:
+                  /x:
+                    get:
+                      parameters:
+                        - $ref: "https://example.com/p.yaml#/components/parameters/A"
+            """)
+
+    def test_missing_external_ref_file_is_skipped(self, tmp_path):
+        with pytest.warns(UserWarning, match='Unable to resolve'):
+            self._endpoints(tmp_path, """
+                paths:
+                  /x:
+                    get:
+                      parameters: [{$ref: "./absent.yaml#/components/parameters/A"}]
+            """)
+
+    def test_form_body_is_labelled_form(self, tmp_path):
+        params = self._endpoints(tmp_path, """
+            paths:
+              /x:
+                post:
+                  requestBody:
+                    content:
+                      application/x-www-form-urlencoded:
+                        schema: {properties: {url: {type: string}}}
+        """)[0][2]
+        assert params[0]['in'] == 'form'
+
+    def test_allOf_branches_are_merged(self, tmp_path):
+        params = self._endpoints(tmp_path, """
+            paths:
+              /x:
+                post:
+                  requestBody:
+                    content:
+                      application/json:
+                        schema:
+                          allOf:
+                            - {properties: {a: {type: string}}, required: [a]}
+                            - {properties: {b: {type: string}}}
+        """)[0][2]
+        by_name = {p['name']: p for p in params}
+        assert set(by_name) == {'a', 'b'}
+        assert by_name['a']['required'] is True
+        assert by_name['b']['required'] is False
