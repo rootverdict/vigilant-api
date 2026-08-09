@@ -349,3 +349,168 @@ class TestMockOnlyFlagIsApplied:
         evidence: dict = {}
         detector._make_finding(listed, 'HIGH', 'd', 'r', evidence)
         assert evidence == {}
+
+
+class TestRequestRetry:
+    """_request retries 429 and 5xx with exponential backoff. Retry logic is easy
+    to get subtly wrong and every OAuth probe depends on it, so it is pinned
+    here. time.sleep is patched so the backoff is asserted, not waited out."""
+
+    def _detector(self, **kw):
+        return OAuthFlawDetector(auth_url='http://t/authorize',
+                                 token_url='http://t/token',
+                                 client_id='c', **kw)
+
+    def _resp(self, status):
+        r = MagicMock()
+        r.status_code = status
+        r.headers = {}
+        r.content = b''
+        r.text = ''
+        return r
+
+    @patch('oauth_detector.time.sleep')
+    @patch('oauth_detector.requests.request')
+    def test_success_returns_immediately(self, req, sleep):
+        req.return_value = self._resp(200)
+        assert self._detector()._request('GET', 'http://t/x').status_code == 200
+        assert req.call_count == 1
+        sleep.assert_not_called()
+
+    @patch('oauth_detector.time.sleep')
+    @patch('oauth_detector.requests.request')
+    def test_429_is_retried_then_succeeds(self, req, sleep):
+        req.side_effect = [self._resp(429), self._resp(200)]
+        assert self._detector()._request('GET', 'http://t/x').status_code == 200
+        assert req.call_count == 2
+
+    @patch('oauth_detector.time.sleep')
+    @patch('oauth_detector.requests.request')
+    def test_429_backoff_doubles(self, req, sleep):
+        req.side_effect = [self._resp(429), self._resp(429), self._resp(429)]
+        assert self._detector()._request('GET', 'http://t/x') is None
+        # attempts 0,1,2 -> 1s, 2s, 4s with the default 1.0s floor
+        assert [c.args[0] for c in sleep.call_args_list] == [1.0, 2.0, 4.0]
+
+    @patch('oauth_detector.time.sleep')
+    @patch('oauth_detector.requests.request')
+    def test_server_error_is_retried(self, req, sleep):
+        req.side_effect = [self._resp(503), self._resp(200)]
+        assert self._detector()._request('GET', 'http://t/x').status_code == 200
+        # 5xx uses the lower 0.5s floor
+        assert sleep.call_args_list[0].args[0] == 0.5
+
+    @patch('oauth_detector.time.sleep')
+    @patch('oauth_detector.requests.request')
+    def test_retries_are_capped_at_three(self, req, sleep):
+        req.return_value = self._resp(500)
+        assert self._detector()._request('GET', 'http://t/x') is None
+        assert req.call_count == 3
+
+    @patch('oauth_detector.time.sleep')
+    @patch('oauth_detector.requests.request')
+    def test_4xx_is_returned_not_retried(self, req, sleep):
+        """A 404 is an answer, not a transient failure."""
+        req.return_value = self._resp(404)
+        assert self._detector()._request('GET', 'http://t/x').status_code == 404
+        assert req.call_count == 1
+
+    @patch('oauth_detector.requests.request')
+    def test_network_error_returns_none_without_retrying(self, req):
+        import requests as _rq
+        req.side_effect = _rq.RequestException('down')
+        assert self._detector()._request('GET', 'http://t/x') is None
+        assert req.call_count == 1
+
+    @patch('oauth_detector.requests.request')
+    def test_exhausted_budget_blocks_the_request(self, req):
+        from request_utils import RequestBudget
+        budget = RequestBudget(1)
+        budget.consume()
+        detector = self._detector(budget=budget)
+        assert detector._request('GET', 'http://t/x') is None
+        req.assert_not_called()
+        assert budget.exhausted is True
+
+    @patch('oauth_detector.time.sleep')
+    @patch('oauth_detector.requests.request')
+    def test_delay_is_applied_on_success(self, req, sleep):
+        req.return_value = self._resp(200)
+        self._detector(delay=0.25)._request('GET', 'http://t/x')
+        sleep.assert_called_once_with(0.25)
+
+
+class TestScopeParsing:
+    """_check_improper_scope must only fire on a genuinely broader grant, and
+    must not crash on token endpoints that return unexpected shapes."""
+
+    def _detector(self):
+        return OAuthFlawDetector(auth_url='http://t/authorize',
+                                 token_url='http://t/token',
+                                 client_id='c', active=True)
+
+    def _resp(self, payload, status=200):
+        r = MagicMock()
+        r.status_code = status
+        r.content = b'x'
+        r.headers = {}
+        if isinstance(payload, Exception):
+            r.json.side_effect = payload
+        else:
+            r.json.return_value = payload
+        return r
+
+    @patch('oauth_detector.requests.request')
+    def test_broad_scope_is_reported(self, req):
+        req.return_value = self._resp({'scope': 'read:own admin'})
+        findings = self._detector()._check_improper_scope()
+        assert len(findings) == 1
+        assert findings[0]['evidence']['granted_scope'] == 'admin read:own'
+
+    @patch('oauth_detector.requests.request')
+    def test_scope_as_list_is_handled(self, req):
+        req.return_value = self._resp({'scope': ['read:own', 'write']})
+        assert len(self._detector()._check_improper_scope()) == 1
+
+    @patch('oauth_detector.requests.request')
+    def test_matching_scope_is_not_reported(self, req):
+        req.return_value = self._resp({'scope': 'read:own'})
+        assert self._detector()._check_improper_scope() == []
+
+    @patch('oauth_detector.requests.request')
+    def test_non_string_scope_is_ignored(self, req):
+        req.return_value = self._resp({'scope': 42})
+        assert self._detector()._check_improper_scope() == []
+
+    @patch('oauth_detector.requests.request')
+    def test_non_object_json_is_ignored(self, req):
+        req.return_value = self._resp(['not', 'an', 'object'])
+        assert self._detector()._check_improper_scope() == []
+
+    @patch('oauth_detector.requests.request')
+    def test_invalid_json_is_ignored(self, req):
+        req.return_value = self._resp(ValueError('no json'))
+        assert self._detector()._check_improper_scope() == []
+
+
+class TestActiveGating:
+    """Scope and code-reuse request and consume tokens, so they are write-ish and
+    must stay behind --active. The read-only probes always run."""
+
+    def _detector(self, active):
+        return OAuthFlawDetector(auth_url='http://t/authorize',
+                                 token_url='http://t/token',
+                                 client_id='c', active=active)
+
+    @patch('oauth_detector.requests.request')
+    def test_safe_mode_skips_token_endpoint_probes(self, req):
+        r = MagicMock()
+        r.status_code = 200
+        r.headers = {'Location': ''}
+        r.content = b''
+        r.text = ''
+        r.url = 'http://t/authorize'
+        req.return_value = r
+        self._detector(active=False).run_all_checks()
+        posted = [c for c in req.call_args_list if c.args and c.args[0] == 'POST']
+        assert posted == []
