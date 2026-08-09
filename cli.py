@@ -140,6 +140,15 @@ def main(spec, tokens, ids, output, skip, callback, oauth_config_file,
     except json.JSONDecodeError as e:
         click.echo(f'[ERROR] Tokens file contains invalid JSON: {e}', err=True)
         sys.exit(2)
+    except UnicodeDecodeError as e:
+        click.echo(f'[ERROR] Tokens file is not valid UTF-8 text: {e}', err=True)
+        sys.exit(2)
+    except OSError as e:
+        # os.path.exists() above only proves the path resolves — it may still be
+        # a directory or be unreadable. Exit 2 ("scan failed"), never 1, which
+        # the CI gate reserves for CRITICAL/HIGH findings.
+        click.echo(f'[ERROR] Could not read tokens file "{tokens}": {e}', err=True)
+        sys.exit(2)
     if not isinstance(users, list) or not users:
         click.echo('[ERROR] Tokens file must be a non-empty JSON array.', err=True)
         sys.exit(2)
@@ -163,6 +172,15 @@ def main(spec, tokens, ids, output, skip, callback, oauth_config_file,
                 oauth_config = json.load(f)
         except json.JSONDecodeError as e:
             click.echo(f'[ERROR] OAuth config file contains invalid JSON: {e}', err=True)
+            sys.exit(2)
+        except UnicodeDecodeError as e:
+            click.echo(f'[ERROR] OAuth config file is not valid UTF-8 text: {e}', err=True)
+            sys.exit(2)
+        except OSError as e:
+            click.echo(
+                f'[ERROR] Could not read OAuth config file "{oauth_config_file}": {e}',
+                err=True,
+            )
             sys.exit(2)
         validation_error = _validate_oauth_config(oauth_config)
         if validation_error:

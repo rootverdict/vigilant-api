@@ -166,3 +166,56 @@ def test_read_map_rejects_entry_without_equals(tmp_path):
 
     assert result.exit_code == 2
     assert '--read-map entry must be WRITE=READ' in result.output
+
+
+def test_unreadable_tokens_file_exits_with_runtime_failure_code(tmp_path):
+    """A tokens path that exists but cannot be read must exit 2, not 1.
+
+    os.path.exists() passes for a directory, but open() then raises OSError.
+    Letting that escape would exit 1 — the code the CI gate reserves for
+    CRITICAL/HIGH findings — turning a config mistake into a phantom
+    security failure.
+    """
+    not_a_file = tmp_path / 'tokens_dir'
+    not_a_file.mkdir()
+
+    result = CliRunner().invoke(
+        main,
+        ['--spec', 'sample_specs/fintech.yaml', '--tokens', str(not_a_file)],
+    )
+
+    assert result.exit_code == 2
+    assert 'Could not read tokens file' in result.output
+
+
+def test_non_utf8_tokens_file_exits_with_runtime_failure_code(tmp_path):
+    """A binary tokens file raises UnicodeDecodeError, which is not a
+    JSONDecodeError — it must still exit 2 rather than escaping as exit 1."""
+    binary_tokens = tmp_path / 'tokens.bin'
+    binary_tokens.write_bytes(b'\xff\xfe\x00\x01not utf-8')
+
+    result = CliRunner().invoke(
+        main,
+        ['--spec', 'sample_specs/fintech.yaml', '--tokens', str(binary_tokens)],
+    )
+
+    assert result.exit_code == 2
+    assert 'not valid UTF-8 text' in result.output
+
+
+def test_unreadable_oauth_config_exits_with_runtime_failure_code(tmp_path):
+    """The same exit-code contract applies to the --oauth-config file."""
+    config_dir = tmp_path / 'oauth_dir'
+    config_dir.mkdir()
+
+    result = CliRunner().invoke(
+        main,
+        [
+            '--spec', 'sample_specs/fintech.yaml',
+            '--tokens', _two_user_tokens(tmp_path),
+            '--oauth-config', str(config_dir),
+        ],
+    )
+
+    assert result.exit_code == 2
+    assert 'Could not read OAuth config file' in result.output
