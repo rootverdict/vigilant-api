@@ -43,3 +43,35 @@ class TestEvidenceFilenames:
         logger = ForensicLogger(str(tmp_path))
         path = logger.log_finding({'type': None, 'check': 'x', 'severity': 'HIGH'})
         assert 'UNKNOWN' in os.path.basename(path)
+
+
+class TestFindingAccessors:
+    """get_findings() returns findings in log order; sorted_findings() returns
+    them severity-first. The scanner uses the sorted view for reports, so the
+    insertion-order accessor needs its own test."""
+
+    def _logger(self, tmp_path):
+        logger = ForensicLogger(str(tmp_path))
+        for severity in ('LOW', 'CRITICAL', 'MEDIUM'):
+            logger.log_finding({'type': 'SSRF', 'check': severity, 'severity': severity})
+        return logger
+
+    def test_get_findings_preserves_log_order(self, tmp_path):
+        logger = self._logger(tmp_path)
+        order = [f['vulnerability']['severity'] for f in logger.get_findings()]
+        assert order == ['LOW', 'CRITICAL', 'MEDIUM']
+
+    def test_sorted_findings_orders_by_severity(self, tmp_path):
+        logger = self._logger(tmp_path)
+        order = [f['vulnerability']['severity'] for f in logger.sorted_findings()]
+        assert order == ['CRITICAL', 'MEDIUM', 'LOW']
+
+    def test_summary_counts_match_logged_findings(self, tmp_path):
+        summary = self._logger(tmp_path).get_summary()
+        assert summary['CRITICAL'] == 1 and summary['MEDIUM'] == 1 and summary['LOW'] == 1
+        assert summary['HIGH'] == 0
+
+    def test_unknown_severity_is_counted_not_dropped(self, tmp_path):
+        logger = ForensicLogger(str(tmp_path))
+        logger.log_finding({'type': 'SSRF', 'check': 'x', 'severity': 'WEIRD'})
+        assert logger.get_summary()['WEIRD'] == 1
