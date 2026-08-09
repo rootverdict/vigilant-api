@@ -8,7 +8,9 @@ repos:
         types: [python]
       - id: mypy
         name: mypy
-        entry: mypy src
+        # No path argument: an explicit path overrides the `files` setting in
+        # pyproject.toml, which would silently check less than CI does.
+        entry: mypy
         language: system
         pass_filenames: false
         types: [python]

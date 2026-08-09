@@ -69,13 +69,17 @@ target-version = "py310"
 line-length = 110
 
 [tool.ruff.lint]
-select = ["E4", "E7", "E9", "F"]
+# Beyond pyflakes: bugbear (B) catches real defects such as bare re-raises that
+# swallow the original traceback; SIM/RET/C4/UP keep the detectors readable.
+select = ["E", "W", "F", "B", "UP", "SIM", "C4", "RET"]
 ignore = ["E402"]
 
 [tool.mypy]
 python_version = "3.10"
-files = ["src"]
+# cli.py is the entry point and mock_server is the validation target — both are
+# shipped code and are type-checked alongside src/.
+files = ["src", "cli.py", "mock_server", "scripts"]
 check_untyped_defs = true
 ignore_missing_imports = true
-no_implicit_optional = false
+no_implicit_optional = true
 warn_unused_configs = true
