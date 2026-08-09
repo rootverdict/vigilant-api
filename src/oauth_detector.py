@@ -24,10 +24,10 @@ class OAuthFlawDetector:
 
     def __init__(self, auth_url: str, token_url: str, client_id: str,
                  client_secret: str = '', redirect_uri: str = 'http://localhost/callback',
-                 auth_code: str = None,
-                 verify: bool = True, proxy: str = None, verbose: bool = False,
+                 auth_code: str | None = None,
+                 verify: bool = True, proxy: str | None = None, verbose: bool = False,
                  delay: float = 0.0, active: bool = False,
-                 budget: RequestBudget = None):
+                 budget: RequestBudget | None = None):
         self.auth_url      = auth_url
         self.token_url     = token_url
         self.client_id     = client_id
@@ -245,7 +245,10 @@ class OAuthFlawDetector:
                         f'Requested scope "read:own" but server granted "{granted_scope}". '
                         'Server is not enforcing scope restrictions properly.'
                     ),
-                    remediation='Server must validate requested scope against what the client is permitted. Never grant broader scope than requested.',
+                    remediation=(
+                        'Server must validate requested scope against what the client is '
+                        'permitted. Never grant broader scope than requested.'
+                    ),
                     evidence={
                         'status_code': resp.status_code,
                         'payload': 'read:own',
@@ -324,7 +327,10 @@ class OAuthFlawDetector:
                 check='Authorization Code Reuse',
                 severity='HIGH',
                 description=description,
-                remediation='Authorization codes must be single-use. Invalidate immediately upon first exchange. On second use, revoke all issued tokens.',
+                remediation=(
+                    'Authorization codes must be single-use. Invalidate immediately upon '
+                    'first exchange. On second use, revoke all issued tokens.'
+                ),
                 evidence={
                     'status_code': resp2.status_code,
                     'payload': test_code,
@@ -382,7 +388,10 @@ class OAuthFlawDetector:
                         'An attacker can craft a link to steal authorization codes by setting '
                         'redirect_uri to their own server.'
                     ),
-                    remediation='Strictly validate redirect_uri against a pre-registered allowlist. Reject exact-match failures. No wildcard matching.',
+                    remediation=(
+                        'Strictly validate redirect_uri against a pre-registered allowlist. '
+                        'Reject exact-match failures. No wildcard matching.'
+                    ),
                     evidence={
                         'status_code': resp.status_code,
                         'payload': evil_redirect,
@@ -437,6 +446,13 @@ class OAuthFlawDetector:
     def _make_finding(self, check, severity, description, remediation, evidence,
                       method: str | None = None, endpoint: str | None = None,
                       parameter: str | None = None) -> dict:
+        evidence = dict(evidence)
+        # _MOCK_ONLY_CHECKS declares which checks are mock-only by nature, so the
+        # report never presents one as a live-target result. A check that decides
+        # this per run (code reuse, which is genuine when a real auth_code is
+        # supplied) sets the flag itself and keeps its more precise value.
+        if check in self._MOCK_ONLY_CHECKS:
+            evidence.setdefault('mock_only', True)
         return {
             'type':        'OAuth Flaw',
             'method':      method,

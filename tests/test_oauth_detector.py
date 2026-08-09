@@ -307,3 +307,45 @@ class TestRunAllChecks:
         )
         assert logged['http']['response']['status_code'] == 302
         assert logged['http']['response']['body_preview'] == mock_resp.headers['Location']
+
+
+class TestMockOnlyFlagIsApplied:
+    """_MOCK_ONLY_CHECKS must actually reach the finding, not just exist.
+
+    The report keys its "mock-server only" badge off evidence.mock_only, so a
+    check listed in the frozenset has to emit that flag or the label silently
+    never appears.
+    """
+
+    def _detector(self):
+        return OAuthFlawDetector(
+            auth_url='http://t/authorize',
+            token_url='http://t/token',
+            client_id='c',
+        )
+
+    def test_listed_check_is_flagged(self):
+        detector = self._detector()
+        listed = next(iter(OAuthFlawDetector._MOCK_ONLY_CHECKS))
+        finding = detector._make_finding(listed, 'HIGH', 'd', 'r', {})
+        assert finding['evidence']['mock_only'] is True
+
+    def test_unlisted_check_is_not_flagged(self):
+        detector = self._detector()
+        finding = detector._make_finding('Open Redirect Abuse via redirect_uri',
+                                         'CRITICAL', 'd', 'r', {})
+        assert 'mock_only' not in finding['evidence']
+
+    def test_explicit_flag_is_not_overwritten(self):
+        """A real auth_code makes code reuse genuine; that verdict must win."""
+        detector = self._detector()
+        listed = next(iter(OAuthFlawDetector._MOCK_ONLY_CHECKS))
+        finding = detector._make_finding(listed, 'HIGH', 'd', 'r', {'mock_only': False})
+        assert finding['evidence']['mock_only'] is False
+
+    def test_caller_evidence_dict_is_not_mutated(self):
+        detector = self._detector()
+        listed = next(iter(OAuthFlawDetector._MOCK_ONLY_CHECKS))
+        evidence: dict = {}
+        detector._make_finding(listed, 'HIGH', 'd', 'r', evidence)
+        assert evidence == {}
