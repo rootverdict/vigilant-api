@@ -92,8 +92,13 @@ It listens on `http://localhost:5000`.
 | GET | `/export?id=` | Uses the last duplicate ID value |
 | GET | `/resource/<ref>` | Accepts predictable encoded references |
 | POST/PUT/PATCH | `/user/update` | Accepts privileged fields |
+| PATCH/PUT | `/account/profile` | Persists privileged fields, readable back via `GET /account/profile` |
 | GET | `/oauth/authorize` | Accepts an unregistered redirect URI |
 | POST | `/oauth/token` | Simulates scope, reuse, and leakage flaws |
+
+`GET /account/profile` is the read-back endpoint that lets the mass-assignment
+check confirm persistence rather than trusting response reflection. `/health` and
+`/callback` are support endpoints, not test targets.
 
 Secure comparison endpoints:
 

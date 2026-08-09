@@ -31,8 +31,15 @@ Malformed or hostile inputs are handled without aborting a scan:
 
 - `paths`, `components.securitySchemes`, `servers`, and per-operation objects are
   type-checked before use; non-object entries are skipped, not dereferenced.
-- Non-object `servers[0]` and undefined server variables fall back with a warning.
+- Non-object `servers[0]`, a non-string `servers[0].url`, and undefined server
+  variables fall back to `http://localhost:5000` with a warning.
 - Non-object parameter entries are skipped during extraction.
+- YAML coerces unquoted scalars, so a hand-written spec can supply a bool or int
+  where a string is expected. Non-string HTTP-method keys are skipped and
+  non-string request-body property names are coerced, instead of aborting the scan.
+- A spec or tokens file that exists but cannot be read, or is not valid UTF-8,
+  is reported as a scan failure (exit 2) rather than escaping as an uncaught
+  error (exit 1, the code reserved for CRITICAL/HIGH findings).
 - YAML recursive anchors (genuinely cyclic structures) are guarded against
   infinite recursion during `$ref` origin registration.
 - JWT `alg` values that are missing, null, or non-string are coerced defensively.
@@ -50,7 +57,7 @@ fixed.
 | 3 | Fully automated browser OAuth flow | Token leakage now probes the real implicit grant, and code reuse accepts a real `auth_code` via `--oauth-config` — both work against live servers. Automatically driving the login/consent screen to capture a code (Playwright/Selenium) remains outstanding. |
 | 4 | Multi-step stateful workflows | Endpoints are tested in isolation; no login → act → verify chains. |
 | 5 | Adaptive / per-endpoint rate limiting | A single uniform delay is applied to all requests. |
-| 7 | New vulnerability families | e.g. BFLA (function-level authorization), excessive data exposure, injection, rate-limit abuse. |
+| 6 | New vulnerability families | e.g. BFLA (function-level authorization), excessive data exposure, injection, rate-limit abuse. |
 
 Delivered since the original V1 cut:
 

@@ -107,8 +107,13 @@ header, and cookie parameters are supported.
 ### Basic SSRF
 
 The scanner injects AWS, GCP, and Azure metadata endpoints. A finding requires
-response evidence such as AWS credential keys, AMI identifiers, cloud-provider
-metadata markers, or a raw metadata IP address.
+response evidence such as AWS credential keys, AMI identifiers, or cloud-provider
+metadata markers.
+
+A raw metadata IP address in the response body is **not** evidence — an endpoint
+that echoes the submitted URL would otherwise produce a false positive. The
+injected payload is stripped from the body before matching, so reflection alone
+never yields a finding.
 
 ### Blind SSRF
 
@@ -151,10 +156,14 @@ OAuth checks require `--oauth-config`.
 | Authorization code reuse | The same code can be exchanged twice | HIGH |
 | Open redirect | An unregistered `redirect_uri` is accepted | CRITICAL |
 
-The token-leakage and code-reuse checks use synthetic flows designed for the
-bundled mock server. A negative result against a real OAuth provider does not
-prove those properties are secure; full testing requires capturing a live
-browser authorization flow.
+The token-leakage check probes the real implicit grant (`response_type=token`)
+and works against a live authorization server.
+
+The code-reuse check uses a synthetic code unless a real, freshly issued one is
+supplied as `auth_code` in `--oauth-config`; that fallback is only meaningful
+against the bundled mock server and is labelled `mock-server only` in reports. A
+negative result there does not prove the property is secure. Scope validation and
+code reuse only run under `--active`, because they request and consume tokens.
 
 ## JWT algorithm inspection
 

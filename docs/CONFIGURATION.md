@@ -292,8 +292,10 @@ negative in-band result does not exclude an outbound interaction.
 ### OAuth checks are skipped or incomplete
 
 Supply `--oauth-config` and confirm both OAuth endpoints are reachable. The
-token-leakage and authorization-code-reuse probes are tailored to the bundled
-mock server and do not fully exercise a real browser authorization flow.
+authorization-code-reuse probe uses a synthetic code unless `auth_code` is
+supplied, and that fallback is only meaningful against the bundled mock server.
+The scope and code-reuse probes additionally require `--active`, because they
+request and consume tokens.
 
 ### The request budget is exhausted
 

@@ -199,6 +199,7 @@ More examples are available in
 | `--verbose` | Print each request and payload | Off |
 | `--active` | Enable write-method probes | Off |
 | `--max-requests INT` | Hard request cap | `1000` |
+| `--read-map WRITE=READ` | Pair a write endpoint with the GET that reads it back, for mass-assignment persistence checks; repeatable | Heuristic pairing |
 | `--version`, `-V` | Print the version | |
 
 ## Output
@@ -242,8 +243,10 @@ Example CI step:
   specification.
 - Active body checks require `--active`.
 - Blind SSRF requires out-of-band confirmation.
-- Two OAuth probes are tailored to the bundled mock server and do not replace a
-  real browser authorization flow.
+- The authorization-code-reuse probe falls back to a synthetic code that is only
+  meaningful against the bundled mock server. Supply `auth_code` in
+  `--oauth-config` with a real, freshly issued code to test a live server.
+  Findings from the synthetic fallback are labelled `mock-server only`.
 - Multi-step stateful workflows are not supported.
 - Rate limiting uses one uniform delay for all requests.
 
