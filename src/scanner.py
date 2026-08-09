@@ -83,14 +83,14 @@ class Scanner:
         self.reporter = ReportGenerator(config.get('output_dir', 'reports'))
 
         # Common options forwarded to all detectors
-        det_opts = dict(
-            delay   = config.get('delay', 0.0),
-            verify  = not config.get('insecure', False),
-            proxy   = config.get('proxy'),
-            verbose = self.verbose,
-            active  = self.active,
-            budget  = self.budget,
-        )
+        det_opts = {
+            'delay':   config.get('delay', 0.0),
+            'verify':  not config.get('insecure', False),
+            'proxy':   config.get('proxy'),
+            'verbose': self.verbose,
+            'active':  self.active,
+            'budget':  self.budget,
+        }
 
         # Read (GET) endpoints let the BOLA detector verify mass-assignment
         # persistence with a follow-up read instead of trusting response reflection.
@@ -188,24 +188,25 @@ class Scanner:
 
             # --- BOLA / IDOR ---
             anonymous_allowed = self._allows_anonymous(security)
-            if 'bola' not in self.skip and not anonymous_allowed:
-                # Run BOLA when any of these are true:
-                #   1. Path has any {param}    → Simple IDOR, Indirect Reference
-                #   2. Method accepts a body   → Body IDOR, Mass Assignment
-                #   3. Query param contains id → Parameter Pollution
-                if self._has_bola_surface(method, params):
-                    # __init__ rejects a <2-user config whenever any endpoint
-                    # exposes a non-anonymous BOLA surface — exactly the condition
-                    # guarding this block — so self.bola is always set here.
-                    assert self.bola is not None
-                    findings = self.bola.test_endpoint(
-                        method, path, self.resource_ids, params=params,
-                        auth_scheme=auth_options,
-                    )
-                    for f in findings:
-                        fp = _log_unique(f)
-                        if fp:
-                            self._print_finding(f, fp)
+            # Run BOLA when the endpoint is not anonymous and exposes a probe
+            # surface — any of:
+            #   1. Path has any {param}    → Simple IDOR, Indirect Reference
+            #   2. Method accepts a body   → Body IDOR, Mass Assignment
+            #   3. Query param contains id → Parameter Pollution
+            if ('bola' not in self.skip and not anonymous_allowed
+                    and self._has_bola_surface(method, params)):
+                # __init__ rejects a <2-user config whenever any endpoint
+                # exposes a non-anonymous BOLA surface — exactly the condition
+                # guarding this block — so self.bola is always set here.
+                assert self.bola is not None
+                findings = self.bola.test_endpoint(
+                    method, path, self.resource_ids, params=params,
+                    auth_scheme=auth_options,
+                )
+                for f in findings:
+                    fp = _log_unique(f)
+                    if fp:
+                        self._print_finding(f, fp)
 
             # --- SSRF ---
             if 'ssrf' not in self.skip:

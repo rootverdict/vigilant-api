@@ -54,9 +54,9 @@ class SSRFDetector:
         'ftp://localhost:21/',
     ]
 
-    def __init__(self, callback_url: str = None, delay: float = 0.0,
-                 verify: bool = True, proxy: str = None, verbose: bool = False,
-                 active: bool = False, budget: RequestBudget = None):
+    def __init__(self, callback_url: str | None = None, delay: float = 0.0,
+                 verify: bool = True, proxy: str | None = None, verbose: bool = False,
+                 active: bool = False, budget: RequestBudget | None = None):
         """
         callback_url : Burp Collaborator / ngrok URL for blind SSRF.
                        If None, blind SSRF check is skipped entirely.
@@ -84,8 +84,8 @@ class SSRFDetector:
     # ------------------------------------------------------------------ #
 
     def test_endpoint(self, method: str, full_url: str, url_params: list,
-                      user: dict | str, auth_scheme: dict = None,
-                      all_params: list = None) -> list:
+                      user: dict | str, auth_scheme: dict | None = None,
+                      all_params: list | None = None) -> list:
         """
         Run all SSRF checks on a single endpoint.
 
@@ -160,7 +160,8 @@ class SSRFDetector:
         if self.verbose:
             print(f'      [SSRF] Blind  param={param["name"]}  callback={self.callback_url}')
 
-        resp = self._request(method, url, token, param['name'], self.callback_url, param['in'], param.get('path'))
+        resp = self._request(method, url, token, param['name'], self.callback_url,
+                             param['in'], param.get('path'))
         # Only flag if the callback URL is reflected in the response body.
         # A plain 200 response (without the URL in the body) is not evidence of
         # SSRF — it just means the server didn't reject the input, which is normal
@@ -209,7 +210,8 @@ class SSRFDetector:
                     status=resp.status_code,
                     body_preview=resp.text[:400],
                     severity='CRITICAL',
-                    description='URL-filter bypass allowed SSRF to the metadata endpoint via a non-standard representation.',
+                    description=('URL-filter bypass allowed SSRF to the metadata endpoint '
+                                 'via a non-standard representation.'),
                 ))
                 break
         return findings
@@ -232,7 +234,8 @@ class SSRFDetector:
                         status=resp.status_code,
                         body_preview=resp.text[:400],
                         severity='CRITICAL',
-                        description=f'Non-HTTP scheme "{payload.split("://")[0]}" was not blocked. Server read an internal file or service.',
+                        description=(f'Non-HTTP scheme "{payload.split("://")[0]}" was not '
+                                     'blocked. Server read an internal file or service.'),
                     ))
         return findings
 
@@ -392,7 +395,14 @@ class SSRFDetector:
     def _set_nested(payload: dict, path: list, value):
         node = payload
         for part in path[:-1]:
-            node = node.setdefault(part, {})
+            child = node.setdefault(part, {})
+            if not isinstance(child, dict):
+                # A sibling param already claimed this key as a scalar. Overwrite
+                # it with a container rather than raising — probing the nested
+                # field matters more than preserving a filler value.
+                child = {}
+                node[part] = child
+            node = child
         node[path[-1]] = value
 
     def _base_body(self) -> dict:
@@ -437,10 +447,7 @@ class SSRFDetector:
     def _contains_metadata(self, text: str, payload: str | None = None) -> bool:
         """Return True if the response body matches any known cloud metadata pattern."""
         text = self._without_reflection(text, payload)
-        for pattern in self.METADATA_PATTERNS:
-            if re.search(pattern, text, re.IGNORECASE):
-                return True
-        return False
+        return any(re.search(pattern, text, re.IGNORECASE) for pattern in self.METADATA_PATTERNS)
 
     def _make_finding(self, check, url, param, payload, status, body_preview, severity, description) -> dict:
         return {

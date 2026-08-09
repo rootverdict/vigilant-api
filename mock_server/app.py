@@ -24,6 +24,8 @@ The server listens on http://localhost:5000
 """
 
 import base64
+import contextlib
+
 import requests as ext_requests
 from flask import Flask, request, jsonify, abort, redirect
 
@@ -136,7 +138,7 @@ def get_transaction(txn_id):
 @app.route('/profile/<int:user_id>', methods=['GET'])
 def get_profile(user_id):
     require_auth()
-    for token_key, u in USERS.items():
+    for u in USERS.values():
         if u['user_id'] == user_id:
             return jsonify({'user_id': u['user_id'], 'name': u['name'], 'role': u['role']})
     return jsonify({'error': 'Not found'}), 404
@@ -433,10 +435,12 @@ if __name__ == '__main__':
     # which would raise UnicodeEncodeError and crash the server on startup.
     # Degrade unencodable characters instead of aborting.
     for _stream in (sys.stdout, sys.stderr):
-        try:
-            _stream.reconfigure(errors='backslashreplace')
-        except (AttributeError, ValueError):
-            pass
+        # These are TextIOWrapper at runtime but typed as the narrower TextIO,
+        # which does not declare reconfigure() — resolve it dynamically.
+        _reconfigure = getattr(_stream, 'reconfigure', None)
+        if _reconfigure is not None:
+            with contextlib.suppress(ValueError):
+                _reconfigure(errors='backslashreplace')
     print('\n  🛡️  Vigilant-API Mock Server')
     print('  ⚠️   This server is INTENTIONALLY VULNERABLE for testing purposes')
     print('  Running on http://localhost:5000\n')

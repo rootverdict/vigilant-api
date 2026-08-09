@@ -101,16 +101,16 @@ def test_protected_bola_endpoint_fails_during_construction_without_requests(tmp_
     )
     reports = tmp_path / 'reports'
 
-    with patch('requests.request') as request:
-        with pytest.raises(ValueError, match='At least 2 users required'):
-            Scanner(
-                _config(
-                    spec,
-                    reports,
-                    [{'name': 'alice', 'token': 'opaque-token', 'user_id': 1}],
-                    skip=['oauth', 'jwt'],
-                )
+    with patch('requests.request') as request, \
+            pytest.raises(ValueError, match='At least 2 users required'):
+        Scanner(
+            _config(
+                spec,
+                reports,
+                [{'name': 'alice', 'token': 'opaque-token', 'user_id': 1}],
+                skip=['oauth', 'jwt'],
             )
+        )
 
     request.assert_not_called()
     assert not reports.exists()

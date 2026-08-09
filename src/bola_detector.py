@@ -55,10 +55,10 @@ class BOLADetector:
 
     def __init__(self, base_url: str, users: list,
                  delay: float = 0.0, verify: bool = True,
-                 proxy: str = None, verbose: bool = False,
-                 active: bool = False, budget: RequestBudget = None,
-                 read_endpoints: list = None,
-                 read_endpoint_map: dict = None):
+                 proxy: str | None = None, verbose: bool = False,
+                 active: bool = False, budget: RequestBudget | None = None,
+                 read_endpoints: list | None = None,
+                 read_endpoint_map: dict | None = None):
         """
         base_url : e.g. 'http://localhost:5000'
         users    : [
@@ -95,7 +95,7 @@ class BOLADetector:
     # ------------------------------------------------------------------ #
 
     def test_endpoint(self, method: str, path: str, resource_ids: list,
-                      params: list = None, auth_scheme: dict = None) -> list:
+                      params: list | None = None, auth_scheme: dict | None = None) -> list:
         """
         Run all BOLA sub-checks on a single endpoint.
 
@@ -289,7 +289,9 @@ class BOLADetector:
             return []
 
         attacker_id     = attacker.get('user_id')
-        attacker_id_str = str(attacker_id) if attacker_id else None
+        # `is not None`, not truthiness: user_id 0 is a legal id, and the rest of
+        # this module already distinguishes the two (see _select_attacker).
+        attacker_id_str = str(attacker_id) if attacker_id is not None else None
         param_name = (query_param or {}).get('name', 'id')
         encoded_name = _urlquote(str(param_name), safe='')
         resolved_url = self._build_url(path, None)
@@ -321,7 +323,7 @@ class BOLADetector:
             # attacker's own resource (server used last/first value correctly
             # but the "last value" was the attacker's own id).  That is NOT
             # an IDOR — the attacker cannot access victim data.
-            if attacker_id and isinstance(body, dict):
+            if attacker_id is not None and isinstance(body, dict):
                 id_vals = self._id_values(body)
                 if id_vals and all(
                     (isinstance(v, int) and v == attacker_id) or
@@ -741,7 +743,14 @@ class BOLADetector:
     def _set_nested(payload: dict, path: list, value):
         node = payload
         for part in path[:-1]:
-            node = node.setdefault(part, {})
+            child = node.setdefault(part, {})
+            if not isinstance(child, dict):
+                # A sibling param already claimed this key as a scalar. Overwrite
+                # it with a container rather than raising — probing the nested
+                # field matters more than preserving a filler value.
+                child = {}
+                node[part] = child
+            node = child
         node[path[-1]] = value
 
     @staticmethod
@@ -757,9 +766,9 @@ class BOLADetector:
             if isinstance(value, dict):
                 for key, child in value.items():
                     key_lower = key.lower()
-                    if any(stem and stem in key_lower for stem in stems):
-                        if str(child) == str(expected):
-                            return True
+                    if (any(stem and stem in key_lower for stem in stems)
+                            and str(child) == str(expected)):
+                        return True
                     if walk(child):
                         return True
             elif isinstance(value, list):
@@ -857,9 +866,9 @@ class BOLADetector:
         def walk(value):
             if isinstance(value, dict):
                 for key, child in value.items():
-                    if 'id' in str(key).lower() and not isinstance(child, (dict, list)):
-                        if child is not None and child != '':
-                            values.append(child)
+                    if ('id' in str(key).lower() and not isinstance(child, (dict, list))
+                            and child is not None and child != ''):
+                        values.append(child)
                     walk(child)
             elif isinstance(value, list):
                 for child in value:
