@@ -29,8 +29,10 @@ HTML_TEMPLATE = """<!DOCTYPE html>
   body { font-family: 'Segoe UI', Arial, sans-serif; background: #0f1117; color: #e2e8f0; padding: 40px; }
   h1 { color: #63b3ed; font-size: 2rem; margin-bottom: 4px; }
   .subtitle { color: #718096; margin-bottom: 32px; font-size: 0.9rem; }
-  .meta { background: #1a202c; border-radius: 8px; padding: 20px; margin-bottom: 32px; display: flex; gap: 40px; }
-  .meta-item label { display: block; font-size: 0.75rem; color: #718096; text-transform: uppercase; letter-spacing: 1px; }
+  .meta { background: #1a202c; border-radius: 8px; padding: 20px; margin-bottom: 32px;
+          display: flex; gap: 40px; }
+  .meta-item label { display: block; font-size: 0.75rem; color: #718096;
+                     text-transform: uppercase; letter-spacing: 1px; }
   .meta-item span  { font-size: 1.4rem; font-weight: 700; }
   .critical { color: #fc8181; } .high { color: #f6ad55; }
   .medium   { color: #f6e05e; } .low  { color: #68d391; }
@@ -40,14 +42,19 @@ HTML_TEMPLATE = """<!DOCTYPE html>
        text-transform: uppercase; letter-spacing: 1px; color: #a0aec0; }
   td { padding: 12px 16px; border-top: 1px solid #2d3748; font-size: 0.9rem; vertical-align: top; }
   tr:hover td { background: #2d3748; }
-  .badge { display: inline-block; padding: 2px 10px; border-radius: 9999px; font-size: 0.75rem; font-weight: 700; }
+  .badge { display: inline-block; padding: 2px 10px; border-radius: 9999px;
+           font-size: 0.75rem; font-weight: 700; }
   .badge-CRITICAL { background: #742a2a; color: #fc8181; }
   .badge-HIGH     { background: #7b341e; color: #f6ad55; }
   .badge-MEDIUM   { background: #744210; color: #f6e05e; }
   .badge-LOW      { background: #1c4532; color: #68d391; }
   .badge-INFO     { background: #2a4365; color: #90cdf4; }
-  .code { font-family: monospace; font-size: 0.8rem; background: #2d3748; padding: 2px 6px; border-radius: 4px; }
-  .remediation { font-size: 0.85rem; color: #a0aec0; border-left: 3px solid #3182ce; padding-left: 12px; margin-top: 6px; }
+  .mock-badge { font-size: 0.7rem; background: #744210; color: #f6e05e;
+                padding: 1px 6px; border-radius: 4px; }
+  .code { font-family: monospace; font-size: 0.8rem; background: #2d3748;
+          padding: 2px 6px; border-radius: 4px; }
+  .remediation { font-size: 0.85rem; color: #a0aec0; border-left: 3px solid #3182ce;
+                 padding-left: 12px; margin-top: 6px; }
   a { color: #63b3ed; text-decoration: none; }
   a:hover { text-decoration: underline; }
   footer { margin-top: 40px; text-align: center; color: #4a5568; font-size: 0.8rem; }
@@ -82,7 +89,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     <tr>
       <td><span class="code">{{ f.metadata.finding_id }}</span></td>
       <td>{{ vuln.type }}</td>
-      <td>{{ vuln.check }}{% if f.evidence.mock_only %} <span style="font-size:0.7rem;background:#744210;color:#f6e05e;padding:1px 6px;border-radius:4px;">mock-server only</span>{% endif %}</td>
+      <td>{{ vuln.check }}{% if f.evidence.mock_only %}
+        <span class="mock-badge">mock-server only</span>{% endif %}</td>
       <td><span class="badge badge-{{ vuln.severity }}">{{ vuln.severity }}</span></td>
       <td>
         <span class="code">{% if vuln.method %}{{ vuln.method }} {% endif %}{{ vuln.endpoint or '—' }}</span>
@@ -127,7 +135,7 @@ class ReportGenerator:
     #  Public API                                                          #
     # ------------------------------------------------------------------ #
 
-    def generate_json(self, findings: list, meta: dict, output_file: str = None) -> str:
+    def generate_json(self, findings: list, meta: dict, output_file: str | None = None) -> str:
         """
         Write a machine-readable JSON report.
         Returns the file path.
@@ -146,7 +154,7 @@ class ReportGenerator:
 
         return output_file
 
-    def generate_html(self, findings: list, meta: dict, output_file: str = None) -> str:
+    def generate_html(self, findings: list, meta: dict, output_file: str | None = None) -> str:
         """
         Write a styled HTML report.
         Returns the file path.
@@ -155,6 +163,9 @@ class ReportGenerator:
             output_file = os.path.join(self.output_dir, 'report.html')
 
         counts   = self._build_summary(findings)
+        # autoescape is a security control, not a formatting choice: the template
+        # embeds attacker-influenced target data (response bodies, endpoint paths).
+        # tests/test_reporter.py::TestHtmlEscaping guards this.
         env      = Environment(autoescape=True)
         template = env.from_string(HTML_TEMPLATE)
         output_dir = os.path.dirname(output_file)
@@ -164,7 +175,8 @@ class ReportGenerator:
             rendered = dict(finding)
             evidence_file = rendered.get('_evidence_file')
             if evidence_file:
-                rendered['_evidence_href'] = os.path.relpath(evidence_file, start=output_dir).replace('\\', '/')
+                rendered['_evidence_href'] = os.path.relpath(
+                    evidence_file, start=output_dir).replace('\\', '/')
             rendered_findings.append(rendered)
 
         html = template.render(
