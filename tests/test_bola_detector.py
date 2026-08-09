@@ -449,3 +449,136 @@ class TestAttackerSelection:
 
         assert findings[0]['unauthorized_user'] == 'bob'
         assert request.call_args.args[2]['name'] == 'bob'
+
+
+class TestBolaBaseBody:
+    """_base_body builds the filler payload that carries a BOLA probe. Required
+    fields only, with the schema deciding the value."""
+
+    def _detector(self):
+        return BOLADetector('http://t', [
+            {'name': 'alice', 'token': 't1', 'user_id': 1},
+            {'name': 'bob', 'token': 't2', 'user_id': 2},
+        ])
+
+    def test_optional_fields_are_omitted(self):
+        assert self._detector()._base_body(
+            [{'name': 'note', 'in': 'body', 'required': False, 'schema': {}}]) == {}
+
+    def test_example_wins_over_type(self):
+        assert self._detector()._base_body(
+            [{'name': 'a', 'in': 'body', 'required': True,
+              'schema': {'type': 'integer', 'example': 42}}]) == {'a': 42}
+
+    def test_default_is_used_when_no_example(self):
+        assert self._detector()._base_body(
+            [{'name': 'a', 'in': 'body', 'required': True,
+              'schema': {'type': 'string', 'default': 'd'}}]) == {'a': 'd'}
+
+    def test_first_enum_member_is_used(self):
+        assert self._detector()._base_body(
+            [{'name': 'a', 'in': 'body', 'required': True,
+              'schema': {'enum': ['one', 'two']}}]) == {'a': 'one'}
+
+    @pytest.mark.parametrize('declared,expected', [
+        ('integer', 7), ('number', 0.01), ('boolean', False),
+        ('array', []), ('object', {}), ('string', 'vigilant-test'),
+    ])
+    def test_type_defaults(self, declared, expected):
+        assert self._detector()._base_body(
+            [{'name': 'a', 'in': 'body', 'required': True,
+              'schema': {'type': declared}}]) == {'a': expected}
+
+    def test_declared_path_builds_nested_body(self):
+        assert self._detector()._base_body(
+            [{'name': 'meta.role', 'path': ['meta', 'role'], 'in': 'body',
+              'required': True, 'schema': {'type': 'string'}}]
+        ) == {'meta': {'role': 'vigilant-test'}}
+
+
+class TestBolaSetNested:
+
+    def test_builds_missing_containers(self):
+        body: dict = {}
+        BOLADetector._set_nested(body, ['a', 'b', 'c'], 1)
+        assert body == {'a': {'b': {'c': 1}}}
+
+    def test_scalar_intermediate_is_replaced(self):
+        """A sibling param may already have claimed the key as a scalar; probing
+        the nested field matters more than preserving a filler value."""
+        body = {'a': 'filler'}
+        BOLADetector._set_nested(body, ['a', 'b'], 1)
+        assert body == {'a': {'b': 1}}
+
+    def test_existing_siblings_are_preserved(self):
+        body = {'a': {'keep': 1}}
+        BOLADetector._set_nested(body, ['a', 'b'], 2)
+        assert body == {'a': {'keep': 1, 'b': 2}}
+
+
+class TestBolaRequestRetry:
+    """Retries mirror the SSRF/OAuth detectors: 429 and 5xx back off, 4xx is an
+    answer, network errors give up immediately. time.sleep is patched."""
+
+    def _detector(self, **kw):
+        return BOLADetector('http://t', [
+            {'name': 'alice', 'token': 't1', 'user_id': 1},
+            {'name': 'bob', 'token': 't2', 'user_id': 2},
+        ], **kw)
+
+    def _resp(self, status):
+        r = MagicMock()
+        r.status_code = status
+        r.content = b''
+        r.text = ''
+        r.headers = {}
+        return r
+
+    @patch('bola_detector.time.sleep')
+    @patch('bola_detector.requests.request')
+    def test_success_returns_immediately(self, req, sleep):
+        req.return_value = self._resp(200)
+        user = {'name': 'alice', 'token': 't1', 'user_id': 1}
+        assert self._detector()._request('GET', 'http://t/x', user).status_code == 200
+        assert req.call_count == 1
+        sleep.assert_not_called()
+
+    @patch('bola_detector.time.sleep')
+    @patch('bola_detector.requests.request')
+    def test_429_is_retried_then_succeeds(self, req, sleep):
+        req.side_effect = [self._resp(429), self._resp(200)]
+        user = {'name': 'alice', 'token': 't1', 'user_id': 1}
+        assert self._detector()._request('GET', 'http://t/x', user).status_code == 200
+        assert req.call_count == 2
+
+    @patch('bola_detector.time.sleep')
+    @patch('bola_detector.requests.request')
+    def test_retries_are_capped_at_three(self, req, sleep):
+        req.return_value = self._resp(503)
+        user = {'name': 'alice', 'token': 't1', 'user_id': 1}
+        assert self._detector()._request('GET', 'http://t/x', user) is None
+        assert req.call_count == 3
+
+    @patch('bola_detector.time.sleep')
+    @patch('bola_detector.requests.request')
+    def test_404_is_returned_not_retried(self, req, sleep):
+        req.return_value = self._resp(404)
+        user = {'name': 'alice', 'token': 't1', 'user_id': 1}
+        assert self._detector()._request('GET', 'http://t/x', user).status_code == 404
+        assert req.call_count == 1
+
+    @patch('bola_detector.requests.request')
+    def test_network_error_returns_none(self, req):
+        import requests as _rq
+        req.side_effect = _rq.RequestException('down')
+        user = {'name': 'alice', 'token': 't1', 'user_id': 1}
+        assert self._detector()._request('GET', 'http://t/x', user) is None
+
+    @patch('bola_detector.requests.request')
+    def test_exhausted_budget_blocks_the_request(self, req):
+        from request_utils import RequestBudget
+        budget = RequestBudget(1)
+        budget.consume()
+        user = {'name': 'alice', 'token': 't1', 'user_id': 1}
+        assert self._detector(budget=budget)._request('GET', 'http://t/x', user) is None
+        req.assert_not_called()
