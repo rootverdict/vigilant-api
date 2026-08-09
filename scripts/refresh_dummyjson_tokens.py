@@ -6,6 +6,12 @@ and writes them to sample_specs/dummyjson_tokens.json.
 
 Run this before scanning dummyjson — tokens expire after 60 minutes.
 
+The output file holds real access tokens and is git-ignored; the repository
+tracks `dummyjson_tokens.json.example` instead. Do not commit the generated file.
+
+The credentials below are DummyJSON's own publicly documented demo accounts, not
+secrets. Never add real credentials to this script.
+
 Usage:
     python scripts/refresh_dummyjson_tokens.py
 """

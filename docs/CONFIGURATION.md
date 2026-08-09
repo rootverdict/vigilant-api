@@ -255,6 +255,11 @@ python cli.py \
   --ids 1,2,3
 ```
 
+`sample_specs/dummyjson_tokens.json` is generated, not tracked — the repository
+ships `dummyjson_tokens.json.example` as its shape. The refresh script writes real
+access tokens there, so it is deliberately git-ignored; never commit the generated
+file.
+
 The generated tokens expire. Refresh them immediately before the scan. SSRF is
 skipped because metadata probes add noise and are inappropriate for this smoke
 test.
