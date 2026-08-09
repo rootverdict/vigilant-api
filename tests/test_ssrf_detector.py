@@ -203,3 +203,151 @@ class TestRequestDispatch:
         result = detector._request('GET', self.MOCK_URL, self.MOCK_TOKEN,
                                    'url', 'http://evil.com', 'query')
         assert result is None
+
+
+def _mock_response(status=200, text='ok'):
+    mock = MagicMock()
+    mock.status_code = status
+    mock.text = text
+    mock.content = text.encode()
+    return mock
+
+
+class TestBlindSSRF:
+    """The blind check was previously unexercised: no test supplied a callback
+    URL, so the whole sub-check ran zero times.
+
+    Its central property is restraint. The scanner cannot observe an out-of-band
+    hit, so a plain 200 proves nothing; only reflection of the callback URL is
+    reported, and only at LOW.
+    """
+
+    PARAM = {'name': 'url', 'in': 'query', 'schema': {'type': 'string'}}
+    USER = {'name': 'alice', 'token': 't'}
+    CALLBACK = 'https://abc123.oob.example.test'
+
+    @patch('ssrf_detector.requests.request')
+    def test_skipped_without_callback_url(self, mock_req):
+        """No --callback means no requests at all, not a silent pass."""
+        detector = SSRFDetector()
+        assert detector._blind_ssrf('GET', 'http://t/fetch', self.PARAM, self.USER) == []
+        mock_req.assert_not_called()
+
+    @patch('ssrf_detector.requests.request')
+    def test_plain_200_is_not_a_finding(self, mock_req):
+        """A 200 without reflection just means the input was accepted."""
+        mock_req.return_value = _mock_response(text='{"status": "queued"}')
+        detector = SSRFDetector(callback_url=self.CALLBACK)
+        assert detector._blind_ssrf('GET', 'http://t/fetch', self.PARAM, self.USER) == []
+
+    @patch('ssrf_detector.requests.request')
+    def test_reflected_callback_is_reported_low(self, mock_req):
+        mock_req.return_value = _mock_response(text=f'fetching {self.CALLBACK} now')
+        detector = SSRFDetector(callback_url=self.CALLBACK)
+        findings = detector._blind_ssrf('GET', 'http://t/fetch', self.PARAM, self.USER)
+
+        assert len(findings) == 1
+        assert findings[0]['severity'] == 'LOW'
+        assert findings[0]['evidence']['payload'] == self.CALLBACK
+
+    @patch('ssrf_detector.requests.request')
+    def test_finding_states_it_is_unconfirmed(self, mock_req):
+        """Severity alone is easy to misread — the text must say it is unconfirmed
+        and name the out-of-band step required to escalate."""
+        mock_req.return_value = _mock_response(text=self.CALLBACK)
+        detector = SSRFDetector(callback_url=self.CALLBACK)
+        finding = detector._blind_ssrf('GET', 'http://t/fetch', self.PARAM, self.USER)[0]
+
+        assert 'unconfirmed' in finding['check'].lower()
+        assert 'does NOT confirm' in finding['description']
+
+    @patch('ssrf_detector.requests.request')
+    def test_network_failure_yields_no_finding(self, mock_req):
+        mock_req.side_effect = __import__('requests').RequestException('boom')
+        detector = SSRFDetector(callback_url=self.CALLBACK)
+        assert detector._blind_ssrf('GET', 'http://t/fetch', self.PARAM, self.USER) == []
+
+
+class TestSafeMode:
+
+    @patch('ssrf_detector.requests.request')
+    def test_write_method_skipped_without_active(self, mock_req):
+        """Safe mode is the default; a POST probe must not be sent."""
+        detector = SSRFDetector()
+        result = detector.test_endpoint(
+            'POST', 'http://t/x',
+            [{'name': 'url', 'in': 'query', 'schema': {}}],
+            {'name': 'alice', 'token': 't'},
+        )
+        assert result == []
+        mock_req.assert_not_called()
+
+
+class TestBaseBody:
+    """_base_body builds the filler payload that carries an SSRF probe into a
+    request body. Required fields only, with the schema deciding the value."""
+
+    def _detector(self, params):
+        detector = SSRFDetector()
+        detector._body_params = params
+        return detector
+
+    def test_optional_fields_are_omitted(self):
+        d = self._detector([{'name': 'note', 'in': 'body', 'required': False, 'schema': {}}])
+        assert d._base_body() == {}
+
+    def test_example_wins_over_type(self):
+        d = self._detector([{'name': 'a', 'in': 'body', 'required': True,
+                             'schema': {'type': 'integer', 'example': 42}}])
+        assert d._base_body() == {'a': 42}
+
+    def test_default_is_used_when_no_example(self):
+        d = self._detector([{'name': 'a', 'in': 'body', 'required': True,
+                             'schema': {'type': 'string', 'default': 'dflt'}}])
+        assert d._base_body() == {'a': 'dflt'}
+
+    def test_first_enum_member_is_used(self):
+        d = self._detector([{'name': 'a', 'in': 'body', 'required': True,
+                             'schema': {'enum': ['one', 'two']}}])
+        assert d._base_body() == {'a': 'one'}
+
+    @pytest.mark.parametrize('declared,expected', [
+        ('integer', 7), ('number', 0.01), ('boolean', False),
+        ('array', []), ('object', {}), ('string', 'vigilant-test'),
+        (None, 'vigilant-test'),
+    ])
+    def test_type_defaults(self, declared, expected):
+        schema = {'type': declared} if declared else {}
+        d = self._detector([{'name': 'a', 'in': 'body', 'required': True, 'schema': schema}])
+        assert d._base_body() == {'a': expected}
+
+    def test_declared_path_builds_nested_body(self):
+        d = self._detector([{'name': 'meta.role', 'path': ['meta', 'role'], 'in': 'body',
+                             'required': True, 'schema': {'type': 'string'}}])
+        assert d._base_body() == {'meta': {'role': 'vigilant-test'}}
+
+    def test_dotted_name_without_path_is_split(self):
+        d = self._detector([{'name': 'meta.role', 'in': 'body', 'required': True,
+                             'schema': {'type': 'string'}}])
+        assert d._base_body() == {'meta': {'role': 'vigilant-test'}}
+
+
+class TestSetNested:
+
+    def test_builds_missing_containers(self):
+        body: dict = {}
+        SSRFDetector._set_nested(body, ['a', 'b', 'c'], 1)
+        assert body == {'a': {'b': {'c': 1}}}
+
+    def test_scalar_intermediate_is_replaced(self):
+        """A sibling param may already have claimed the key as a scalar. Probing
+        the nested field matters more than preserving a filler value, so the
+        scalar is overwritten instead of raising TypeError."""
+        body = {'a': 'filler'}
+        SSRFDetector._set_nested(body, ['a', 'b'], 1)
+        assert body == {'a': {'b': 1}}
+
+    def test_existing_siblings_are_preserved(self):
+        body = {'a': {'keep': 1}}
+        SSRFDetector._set_nested(body, ['a', 'b'], 2)
+        assert body == {'a': {'keep': 1, 'b': 2}}
