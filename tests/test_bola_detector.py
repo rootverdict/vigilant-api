@@ -42,7 +42,7 @@ class TestBodiesSimilar:
         assert not detector._bodies_similar(b1, b2)
 
     def test_string_id_matches_int_id(self, detector):
-        """API returns "id": "1" (string) — should still match against int resource_id 1."""
+        """API returns "id": "1" (string) - should still match against int resource_id 1."""
         b1 = {'id': '1', 'status': 'settled'}
         b2 = {'id': '1', 'status': 'settled'}
         assert detector._bodies_similar(b1, b2)
@@ -74,16 +74,16 @@ class TestBodiesSimilar:
         assert not detector._bodies_similar(b1, b2)
 
     def test_single_id_key_sufficient(self, detector):
-        """A small object with just one id field — should be flagged."""
+        """A small object with just one id field - should be flagged."""
         b1 = {'id': 3, 'status': 'ok'}
         b2 = {'id': 3, 'status': 'ok'}
         assert detector._bodies_similar(b1, b2)
 
     def test_null_id_not_similar(self, detector):
-        """None IDs should not count as a match — fall through to ≥2 non-trivial check."""
+        """None IDs should not count as a match - fall through to ≥2 non-trivial check."""
         b1 = {'id': None, 'status': 'ok'}
         b2 = {'id': None, 'status': 'ok'}
-        # id key is present but value is None — _ids_equal guards against this.
+        # id key is present but value is None - _ids_equal guards against this.
         # Falls through to the non-ID path: "status": "ok" is only 1 non-trivial
         # matching value → not similar (requires ≥2).
         assert not detector._bodies_similar(b1, b2)

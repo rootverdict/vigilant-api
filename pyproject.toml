@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "vigilant-api"
 version = "1.0.0"
-description = "Black-box API security scanner — BOLA/IDOR, SSRF, OAuth flaw detection"
+description = "Black-box API security scanner - BOLA/IDOR, SSRF, OAuth flaw detection"
 readme = "README.md"
 license = { file = "LICENSE" }
 requires-python = ">=3.10"
@@ -51,7 +51,7 @@ addopts = [
     "no:cacheprovider",
 ]
 filterwarnings = [
-    # PyJWT warns when a test key is shorter than 32 bytes — expected in unit tests
+    # PyJWT warns when a test key is shorter than 32 bytes - expected in unit tests
     "ignore::jwt.warnings.InsecureKeyLengthWarning",
 ]
 
@@ -76,7 +76,7 @@ ignore = ["E402"]
 
 [tool.mypy]
 python_version = "3.10"
-# cli.py is the entry point and mock_server is the validation target — both are
+# cli.py is the entry point and mock_server is the validation target - both are
 # shipped code and are type-checked alongside src/.
 files = ["src", "cli.py", "mock_server", "scripts"]
 check_untyped_defs = true

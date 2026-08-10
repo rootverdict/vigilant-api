@@ -88,7 +88,7 @@ def test_pre_scan_validation_error_exits_with_runtime_failure_code():
 
 def test_unexpected_scan_error_fails_safe_with_code_2(tmp_path):
     """An unexpected error during the scan must exit 2 (scan failed), not leak an
-    uncaught traceback — Python would exit with code 1, the signal the CI gate
+    uncaught traceback - Python would exit with code 1, the signal the CI gate
     reserves for CRITICAL/HIGH findings."""
     tokens = tmp_path / 'two_users.json'
     tokens.write_text(
@@ -172,8 +172,8 @@ def test_unreadable_tokens_file_exits_with_runtime_failure_code(tmp_path):
     """A tokens path that exists but cannot be read must exit 2, not 1.
 
     os.path.exists() passes for a directory, but open() then raises OSError.
-    Letting that escape would exit 1 — the code the CI gate reserves for
-    CRITICAL/HIGH findings — turning a config mistake into a phantom
+    Letting that escape would exit 1 - the code the CI gate reserves for
+    CRITICAL/HIGH findings - turning a config mistake into a phantom
     security failure.
     """
     not_a_file = tmp_path / 'tokens_dir'
@@ -190,7 +190,7 @@ def test_unreadable_tokens_file_exits_with_runtime_failure_code(tmp_path):
 
 def test_non_utf8_tokens_file_exits_with_runtime_failure_code(tmp_path):
     """A binary tokens file raises UnicodeDecodeError, which is not a
-    JSONDecodeError — it must still exit 2 rather than escaping as exit 1."""
+    JSONDecodeError - it must still exit 2 rather than escaping as exit 1."""
     binary_tokens = tmp_path / 'tokens.bin'
     binary_tokens.write_bytes(b'\xff\xfe\x00\x01not utf-8')
 

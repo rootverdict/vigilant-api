@@ -1,7 +1,7 @@
 """
 tests/test_auth.py
 -------------------
-Unit tests for AuthHandler.check_jwt_algorithm — the static method that
+Unit tests for AuthHandler.check_jwt_algorithm - the static method that
 inspects JWT headers for weak/dangerous algorithm choices.
 
 Tokens are crafted with base64url-encoded headers so no real JWT library
@@ -56,7 +56,7 @@ def _make_jwt(header: dict, payload: dict = None) -> str:
         return f'{h}.{p}.'
 
     # For asymmetric algorithms (RS256, ES256, PS256, …) we don't have a real
-    # private key, but get_unverified_header() only decodes the header segment —
+    # private key, but get_unverified_header() only decodes the header segment -
     # it does not validate the signature.  A random 32-byte base64url dummy is
     # syntactically acceptable.
     sig = base64.urlsafe_b64encode(os.urandom(32)).rstrip(b'=').decode()
@@ -130,14 +130,14 @@ class TestAcceptableAlgorithms:
 class TestOpaqueTokens:
 
     def test_opaque_token_returns_none(self):
-        # Simple bearer token — not a JWT
+        # Simple bearer token - not a JWT
         assert AuthHandler.check_jwt_algorithm('token_alice') is None
 
     def test_empty_string_returns_none(self):
         assert AuthHandler.check_jwt_algorithm('') is None
 
     def test_malformed_jwt_returns_none(self):
-        # Two segments only (missing signature) — PyJWT raises an exception
+        # Two segments only (missing signature) - PyJWT raises an exception
         assert AuthHandler.check_jwt_algorithm('abc.def') is None
 
     def test_random_base64_returns_none(self):
@@ -253,7 +253,7 @@ class TestGetSession:
     """get_session() bakes credentials into a reusable requests.Session.
 
     The detectors use apply() instead, so these are the only tests exercising
-    this path — without them the whole method is unverified.
+    this path - without them the whole method is unverified.
     """
 
     def test_bearer_sets_authorization_header(self):

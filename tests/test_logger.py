@@ -18,7 +18,7 @@ def test_http_reproduction_stringifies_structured_payload():
 
 class TestEvidenceFilenames:
     """Evidence paths land in CI artifact directories, so they must be safe to
-    glob. Finding types include 'BOLA/IDOR' and 'OAuth Flaw' — a separator and a
+    glob. Finding types include 'BOLA/IDOR' and 'OAuth Flaw' - a separator and a
     space that both make the raw value awkward in a shell."""
 
     def test_slash_and_space_are_normalised(self, tmp_path):

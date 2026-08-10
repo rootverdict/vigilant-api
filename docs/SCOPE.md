@@ -5,7 +5,7 @@ document defines what is delivered (**V1**) and what is planned (**V2**).
 
 Current version: `1.0.0`.
 
-## V1 — Delivered
+## V1 - Delivered
 
 The core pipeline is complete and works end-to-end: parse an OpenAPI spec →
 authenticate as multiple identities → run logic-layer detectors → emit forensic
@@ -45,7 +45,7 @@ Malformed or hostile inputs are handled without aborting a scan:
 - JWT `alg` values that are missing, null, or non-string are coerced defensively.
 - Auth handlers are cached per identity instead of being rebuilt on every call.
 
-## V2 — Planned
+## V2 - Planned
 
 Ordered items are the documented limitations and known gaps; priority is not yet
 fixed.
@@ -54,18 +54,18 @@ fixed.
 |---|---|---|
 | 1 | GraphQL / gRPC support | Today the scanner is REST/OpenAPI only. |
 | 2 | Remote HTTP `$ref` download | Only local external `$ref` files are resolved. |
-| 3 | Fully automated browser OAuth flow | Token leakage now probes the real implicit grant, and code reuse accepts a real `auth_code` via `--oauth-config` — both work against live servers. Automatically driving the login/consent screen to capture a code (Playwright/Selenium) remains outstanding. |
+| 3 | Fully automated browser OAuth flow | Token leakage now probes the real implicit grant, and code reuse accepts a real `auth_code` via `--oauth-config` - both work against live servers. Automatically driving the login/consent screen to capture a code (Playwright/Selenium) remains outstanding. |
 | 4 | Multi-step stateful workflows | Endpoints are tested in isolation; no login → act → verify chains. |
 | 5 | Adaptive / per-endpoint rate limiting | A single uniform delay is applied to all requests. |
 | 6 | New vulnerability families | e.g. BFLA (function-level authorization), excessive data exposure, injection, rate-limit abuse. |
 
 Delivered since the original V1 cut:
 
-- **Mass-assignment persistence verification** — after reflection, the BOLA detector
+- **Mass-assignment persistence verification** - after reflection, the BOLA detector
   reads the resource back through a heuristically-paired (or config-supplied) GET
   endpoint; a confirmed persisted privilege field is reported **HIGH**, reflection-only
   stays **MEDIUM**.
-- **Real OAuth token-leakage & code-reuse** — see item 3 above.
+- **Real OAuth token-leakage & code-reuse** - see item 3 above.
 
 ## Out of scope
 

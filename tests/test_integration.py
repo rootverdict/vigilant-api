@@ -228,7 +228,7 @@ class TestIntegration:
         Alice (user_id=1) owns transactions 1 and 3.
         Bob (user_id=2) owns transaction 2.
         Alice should NOT be flagged as an unauthorised accessor for her own resources
-        (resources 1 or 3 — both owned by alice).
+        (resources 1 or 3 - both owned by alice).
         """
         simple_idor = [
             f for f in scan_result['findings']
@@ -239,7 +239,7 @@ class TestIntegration:
             # 'unauthorized_user' is stored on the top-level finding dict
             unauth = finding.get('unauthorized_user') or vuln.get('unauthorized_user', '')
             rid    = vuln.get('resource_id')
-            # Alice owns resources 1 and 3 — she must never appear as unauthorised
+            # Alice owns resources 1 and 3 - she must never appear as unauthorised
             if rid in (1, 3) and 'alice' in str(unauth).lower():
                 pytest.fail(
                     f'False positive: alice flagged as unauthorised accessor '

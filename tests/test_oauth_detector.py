@@ -67,7 +67,7 @@ class TestMockOnlyChecks:
         assert 'Authorization Code Reuse' in OAuthFlawDetector._MOCK_ONLY_CHECKS
 
     def test_token_leakage_not_mock_only(self):
-        # Token leakage now probes the real implicit grant — it works against a
+        # Token leakage now probes the real implicit grant - it works against a
         # live server and is no longer a mock-only synthetic check.
         assert 'Token Leakage in URL / Referer' not in OAuthFlawDetector._MOCK_ONLY_CHECKS
 
@@ -173,7 +173,7 @@ class TestRunAllChecks:
 
     @patch('oauth_detector.requests.request')
     def test_token_leakage_fires_when_token_in_query(self, mock_req, detector):
-        # Token in the query string is an even worse variant — also flagged.
+        # Token in the query string is an even worse variant - also flagged.
         mock_resp = MagicMock()
         mock_resp.status_code = 302
         mock_resp.headers = {

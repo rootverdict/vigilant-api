@@ -4,7 +4,7 @@ refresh_dummyjson_tokens.py
 Fetches fresh JWT tokens from dummyjson.com for three test users
 and writes them to sample_specs/dummyjson_tokens.json.
 
-Run this before scanning dummyjson — tokens expire after 60 minutes.
+Run this before scanning dummyjson - tokens expire after 60 minutes.
 
 The output file holds real access tokens and is git-ignored; the repository
 tracks `dummyjson_tokens.json.example` instead. Do not commit the generated file.
@@ -76,7 +76,7 @@ def main():
     print("  python cli.py --spec sample_specs/dummyjson.yaml \\")
     print("                --tokens sample_specs/dummyjson_tokens.json \\")
     print("                --skip ssrf --skip oauth --delay 0.2 --ids 1,2,3")
-    print("\n  (SSRF and OAuth skipped — dummyjson has no /fetch or OAuth server endpoints)")
+    print("\n  (SSRF and OAuth skipped - dummyjson has no /fetch or OAuth server endpoints)")
 
 
 if __name__ == "__main__":

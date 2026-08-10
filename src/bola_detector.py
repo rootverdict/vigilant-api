@@ -21,7 +21,7 @@ Known limitations:
     corresponding read endpoint, which is not guaranteed by the OpenAPI spec).
     Treat findings as "possible mass assignment" and confirm manually.
   - Indirect Reference uses realistic encodings only (base64, URL-safe base64,
-    hex, MD5). UUID-from-int is excluded — no real API accepts that format.
+    hex, MD5). UUID-from-int is excluded - no real API accepts that format.
 
 All checks return findings into a shared list returned to the caller.
 """
@@ -145,7 +145,7 @@ class BOLADetector:
                     body_idor_found = True   # skip remaining rids for body IDOR
 
         # Indirect reference only applies to paths that have a {param} to encode.
-        # Without a placeholder, re.sub has nothing to replace — the URL stays
+        # Without a placeholder, re.sub has nothing to replace - the URL stays
         # identical across all encodings, so all 4 requests go to the same
         # endpoint with no useful test being performed.
         if resource_ids and (method in ('GET', 'HEAD', 'OPTIONS') or self.active):
@@ -154,7 +154,7 @@ class BOLADetector:
                     method, path, resource_ids[0], path_param['name']
                 )
 
-        # Body-only checks — only run on endpoints that accept a request body
+        # Body-only checks - only run on endpoints that accept a request body
         if self.active and body_method:
             findings += self._mass_assignment(method, path)
 
@@ -173,7 +173,7 @@ class BOLADetector:
         findings  = []
         responses = {}
 
-        # Step 1 – collect each user's response
+        # Step 1 - collect each user's response
         # Send empty JSON body for POST/PUT/PATCH so Flask doesn't return 415
         body_kwargs: dict[str, object] = (
             {'json': {}} if method in ('POST', 'PUT', 'PATCH') else {}
@@ -189,7 +189,7 @@ class BOLADetector:
                 'size':   len(resp.content) if resp else 0,
             }
 
-        # Step 2 – identify the actual owner, then compare non-owner access.
+        # Step 2 - identify the actual owner, then compare non-owner access.
         owner = self._identify_owner(path, resource_id, responses)
         if owner is None:
             return []
@@ -275,7 +275,7 @@ class BOLADetector:
 
         e.g. GET /transactions?id=1&id=2
 
-        Only meaningful for GET endpoints — POST/PUT/PATCH ignore query-string
+        Only meaningful for GET endpoints - POST/PUT/PATCH ignore query-string
         id params in favour of the request body, so we skip them to avoid
         wasting requests that always return 405.
         """
@@ -311,7 +311,7 @@ class BOLADetector:
 
             body = self._safe_json(resp)
 
-            # Skip generic error responses — they carry no resource data.
+            # Skip generic error responses - they carry no resource data.
             if not body or self._is_error_body(body):
                 continue
 
@@ -322,7 +322,7 @@ class BOLADetector:
             # matches the *attacker's* own user_id, the server returned the
             # attacker's own resource (server used last/first value correctly
             # but the "last value" was the attacker's own id).  That is NOT
-            # an IDOR — the attacker cannot access victim data.
+            # an IDOR - the attacker cannot access victim data.
             if attacker_id is not None and isinstance(body, dict):
                 id_vals = self._id_values(body)
                 if id_vals and all(
@@ -330,7 +330,7 @@ class BOLADetector:
                     (isinstance(v, str) and v == attacker_id_str)
                     for v in id_vals
                 ):
-                    continue   # attacker is reading their own resource — not IDOR
+                    continue   # attacker is reading their own resource - not IDOR
 
             finding = self._make_finding(
                 check='Parameter Pollution IDOR',
@@ -436,7 +436,7 @@ class BOLADetector:
         if attacker is None:
             return []
 
-        # Realistic encodings only — all are actually used by real APIs
+        # Realistic encodings only - all are actually used by real APIs
         encoded_ids = [
             base64.b64encode(str(resource_id).encode()).decode(),                     # "MQ==" for 1
             base64.urlsafe_b64encode(str(resource_id).encode()).decode().rstrip('='), # url-safe, no padding
@@ -493,12 +493,12 @@ class BOLADetector:
                         'description': (
                             f'Resource for ID {resource_id}, owned by "{owner["name"]}", was '
                             f'accessed by "{attacker["name"]}" via encoded reference "{encoded}". '
-                            'This encoding is predictable — an attacker can enumerate victim IDs '
+                            'This encoding is predictable - an attacker can enumerate victim IDs '
                             'by applying the same encoding to sequential integers.'
                         ),
                         'remediation': (
                             'Use cryptographically random, non-guessable UUIDs (v4) as resource identifiers. '
-                            'Never use base64, hex, or hash encodings of sequential integers as references — '
+                            'Never use base64, hex, or hash encodings of sequential integers as references - '
                             'they provide no security. Enforce server-side ownership checks on every access '
                             'regardless of the reference format used.'
                         ),
@@ -512,7 +512,7 @@ class BOLADetector:
         Mass Assignment: send privileged fields (role, is_admin, balance, etc.)
         in a POST/PUT/PATCH body and check if the server reflects them back.
 
-        Limitation — reflection only, not persistence:
+        Limitation - reflection only, not persistence:
           This check confirms that the server echoes the privileged field back
           in the immediate response. It does NOT verify that the value was
           persisted to the database (a follow-up GET would require knowing the
@@ -565,7 +565,7 @@ class BOLADetector:
                     for key, sent_val in payload.items():
                         if key in body and body[key] == sent_val:
                             # Reflection alone is only MEDIUM. Attempt a follow-up
-                            # read to prove the value was actually persisted — a
+                            # read to prove the value was actually persisted - a
                             # confirmed persisted privilege field is HIGH.
                             persisted = self._confirm_persistence(
                                 path, attacker, key, sent_val
@@ -582,7 +582,7 @@ class BOLADetector:
                                 description = (
                                     f'Server accepted privileged field "{key}" = {sent_val!r} '
                                     f'via {method} and reflected it in the immediate response. '
-                                    'NOTE: This check confirms reflection only — persistence was '
+                                    'NOTE: This check confirms reflection only - persistence was '
                                     'not verified (no matching read endpoint, or the value did not '
                                     'appear on read-back). Confirm manually that the value is stored.'
                                 )
@@ -746,7 +746,7 @@ class BOLADetector:
             child = node.setdefault(part, {})
             if not isinstance(child, dict):
                 # A sibling param already claimed this key as a scalar. Overwrite
-                # it with a container rather than raising — probing the nested
+                # it with a container rather than raising - probing the nested
                 # field matters more than preserving a filler value.
                 child = {}
                 node[part] = child
@@ -823,14 +823,14 @@ class BOLADetector:
                     # Respects --delay if set; otherwise defaults to 1 s base wait.
                     wait = (2 ** attempt) * max(self.delay, 1.0)
                     if self.verbose:
-                        print(f'      [BOLA] 429 rate-limited — retrying in {wait:.1f}s')
+                        print(f'      [BOLA] 429 rate-limited - retrying in {wait:.1f}s')
                     time.sleep(wait)
                     continue
                 if resp.status_code >= 500:
-                    # Transient server error — retry once before giving up.
+                    # Transient server error - retry once before giving up.
                     wait = (2 ** attempt) * max(self.delay, 0.5)
                     if self.verbose:
-                        print(f'      [BOLA] {resp.status_code} server error — retrying in {wait:.1f}s')
+                        print(f'      [BOLA] {resp.status_code} server error - retrying in {wait:.1f}s')
                     time.sleep(wait)
                     continue
                 if self.delay > 0:
@@ -891,7 +891,7 @@ class BOLADetector:
           1. Both must be objects with at least 1 overlapping non-error scalar path.
           2. If any nested ID-like field (name contains 'id') has the same value in
              both responses, the attacker received the owner's resource → IDOR.
-             Single matching ID field is sufficient — some resources are small
+             Single matching ID field is sufficient - some resources are small
              (e.g. {"id": 1, "status": "ok"}) and requiring ≥2 matches would
              cause false negatives on those endpoints.
           3. If no explicit ID field exists, require ≥2 matching non-trivial
@@ -930,7 +930,7 @@ class BOLADetector:
             return False
 
         # ID-like fields: single match is enough to confirm same resource.
-        # Rationale: {"id": 1, "status": "ok"} — only one non-trivial match
+        # Rationale: {"id": 1, "status": "ok"} - only one non-trivial match
         # is available, but "id" matching is high-confidence evidence of IDOR.
         id_paths = {path for path in real_paths if path and 'id' in path[-1].lower()}
         if id_paths:
@@ -952,10 +952,10 @@ class BOLADetector:
                     return False
             return any(_ids_equal(flat1[path], flat2[path]) for path in id_paths)
 
-        # No explicit ID field — require ≥2 matching non-trivial values to
+        # No explicit ID field - require ≥2 matching non-trivial values to
         # reduce false positives from resources with only a single shared field.
         # Use a tuple (not a set) so `not in` works for any value type including
-        # lists and dicts — sets require hashable elements and would raise
+        # lists and dicts - sets require hashable elements and would raise
         # TypeError when a response field contains a list.
         trivial = (None, '', True, False)
         matching = sum(
@@ -1009,6 +1009,6 @@ class BOLADetector:
                 'Enforce object-level authorization on every request. '
                 'Verify that the authenticated user owns (or is explicitly permitted to access) '
                 'the requested resource_id before returning data. '
-                'Never rely solely on sequential IDs — use UUIDs and server-side ownership checks.'
+                'Never rely solely on sequential IDs - use UUIDs and server-side ownership checks.'
             ),
         }

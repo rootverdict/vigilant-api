@@ -7,8 +7,8 @@ Use this to test Vigilant-API locally without a real target.
 INTENTIONAL VULNERABILITIES (for learning):
   - /transactions/<id>   → BOLA: no ownership check, any token reads any record
   - /profile/<id>        → BOLA: same issue for user profiles
-  - /fetch               → SSRF: fetches any URL via query param — simulates cloud metadata leak
-  - /proxy               → SSRF: fetches any URL via X-Target-URL header — tests header-based SSRF
+  - /fetch               → SSRF: fetches any URL via query param - simulates cloud metadata leak
+  - /proxy               → SSRF: fetches any URL via X-Target-URL header - tests header-based SSRF
   - /transfer            → Body IDOR: accepts any from_account_id without ownership check
   - /export              → Parameter Pollution: ?id=X&id=Y uses last value
   - /resource/<ref>      → Indirect Reference: base64/hex/int encodings accepted, no ownership check
@@ -94,7 +94,7 @@ ACCOUNTS = {
 
 # Mutable account profile used to demonstrate a mass-assignment vulnerability
 # that actually PERSISTS (unlike /user/update, which only echoes). A follow-up
-# GET reflects whatever the last PATCH stored — including privileged fields.
+# GET reflects whatever the last PATCH stored - including privileged fields.
 ACCOUNT_PROFILE = {
     'user_id': 1, 'name': 'alice', 'role': 'customer',
     'tier': 'basic', 'verified': False,
@@ -124,7 +124,7 @@ def health():
     return jsonify({'status': 'ok', 'service': 'vigilant-api mock server'})
 
 
-# ❌ VULNERABLE: No ownership check — any authenticated user can read any transaction
+# ❌ VULNERABLE: No ownership check - any authenticated user can read any transaction
 @app.route('/transactions/<int:txn_id>', methods=['GET'])
 def get_transaction(txn_id):
     require_auth()   # only checks that a token is present, NOT that it owns the resource
@@ -144,7 +144,7 @@ def get_profile(user_id):
     return jsonify({'error': 'Not found'}), 404
 
 
-# ❌ VULNERABLE: SSRF via header — reads target URL from X-Target-URL request header.
+# ❌ VULNERABLE: SSRF via header - reads target URL from X-Target-URL request header.
 # Tests SSRF detection when the URL is delivered via a header rather than a query param.
 @app.route('/proxy', methods=['GET'])
 def proxy_via_header():
@@ -171,7 +171,7 @@ def proxy_via_header():
         return jsonify({'error': str(e)}), 500
 
 
-# ❌ VULNERABLE: SSRF — fetches any URL passed in ?url= without validation
+# ❌ VULNERABLE: SSRF - fetches any URL passed in ?url= without validation
 @app.route('/fetch', methods=['GET'])
 def fetch_url():
     require_auth()
@@ -180,9 +180,9 @@ def fetch_url():
         return jsonify({'error': 'url param required'}), 400
 
     # Simulate SSRF: if the injected URL targets a cloud metadata endpoint
-    # (or a known bypass variant — nip.io, IPv6-mapped, @ authority trick, etc.),
+    # (or a known bypass variant - nip.io, IPv6-mapped, @ authority trick, etc.),
     # return realistic fake metadata so the detector fires locally.
-    # On a real cloud VM this path would never be reached — the actual
+    # On a real cloud VM this path would never be reached - the actual
     # 169.254.169.254 address would respond with live IAM credentials.
     if any(trigger in url for trigger in _METADATA_TRIGGERS):
         if 'iam/security-credentials' in url:
@@ -202,7 +202,7 @@ def fetch_url():
         return jsonify({'error': str(e)}), 500
 
 
-# ❌ VULNERABLE: Body IDOR — accepts from_account_id from user without ownership check
+# ❌ VULNERABLE: Body IDOR - accepts from_account_id from user without ownership check
 @app.route('/transfer', methods=['POST'])
 def transfer():
     require_auth()
@@ -225,7 +225,7 @@ def transfer():
     })
 
 
-# ❌ VULNERABLE: Parameter Pollution — uses request.args.getlist('id')[-1] (last value wins)
+# ❌ VULNERABLE: Parameter Pollution - uses request.args.getlist('id')[-1] (last value wins)
 @app.route('/export', methods=['GET'])
 def export():
     require_auth()
@@ -241,7 +241,7 @@ def export():
     return jsonify(txn)
 
 
-# ❌ VULNERABLE: Indirect Reference — accepts base64/hex/int encodings of IDs
+# ❌ VULNERABLE: Indirect Reference - accepts base64/hex/int encodings of IDs
 #    without verifying ownership. Attacker can encode sequential integers to
 #    enumerate any transaction.
 @app.route('/resource/<ref>', methods=['GET'])
@@ -271,10 +271,10 @@ def get_resource_by_ref(ref):
     txn = TRANSACTIONS.get(resource_id)
     if not txn:
         return jsonify({'error': 'Not found'}), 404
-    return jsonify(txn)   # ← BOLA: no ownership check — any user can decode any ID
+    return jsonify(txn)   # ← BOLA: no ownership check - any user can decode any ID
 
 
-# ❌ VULNERABLE: Mass Assignment — binds raw request body to user record
+# ❌ VULNERABLE: Mass Assignment - binds raw request body to user record
 #    Accepts any field including privileged ones (role, is_admin, balance, etc.)
 @app.route('/user/update', methods=['POST', 'PUT', 'PATCH'])
 def update_user():
@@ -288,7 +288,7 @@ def update_user():
     return jsonify(merged)
 
 
-# ❌ VULNERABLE: Mass Assignment WITH persistence — PATCH stores every field
+# ❌ VULNERABLE: Mass Assignment WITH persistence - PATCH stores every field
 #    (including privileged ones) into the server-side record, and GET reflects
 #    the stored state. This lets the scanner confirm persistence via read-back.
 @app.route('/account/profile', methods=['GET'])
@@ -326,7 +326,7 @@ def oauth_authorize():
     if client_id != _OAUTH_CLIENT_ID:
         return jsonify({'error': 'invalid_request'}), 400
 
-    # ❌ VULNERABLE: Implicit grant enabled — returns the access token in the
+    # ❌ VULNERABLE: Implicit grant enabled - returns the access token in the
     #   redirect FRAGMENT. Any page that then loads an external resource leaks
     #   the token via the Referer header (and it also lands in browser history).
     if response_type == 'token':
@@ -338,7 +338,7 @@ def oauth_authorize():
     if response_type != 'code':
         return jsonify({'error': 'unsupported_response_type'}), 400
 
-    # ← Open redirect: redirect_uri never validated against allowlist —
+    # ← Open redirect: redirect_uri never validated against allowlist -
     #   any URI (including attacker-controlled) is accepted.
     # State is echoed when supplied. Requiring and validating it is the OAuth
     # client's responsibility, so omission alone is not a server-side finding.
@@ -368,7 +368,7 @@ def oauth_token():
 
     if grant_type == 'client_credentials':
         # ← Scope bypass: client requested "read:own" but server grants
-        #   "admin read write read:all" — no scope restriction enforced.
+        #   "admin read write read:all" - no scope restriction enforced.
         return jsonify({
             'access_token': _OAUTH_ACCESS_TOKEN,
             'token_type':   'bearer',
@@ -377,7 +377,7 @@ def oauth_token():
         })
 
     if grant_type == 'authorization_code':
-        # ← Code reuse: same code accepted every time — never invalidated.
+        # ← Code reuse: same code accepted every time - never invalidated.
         #   RFC 6749 requires single-use codes and token revocation on reuse.
         return jsonify({
             'access_token': _OAUTH_ACCESS_TOKEN,
@@ -389,7 +389,7 @@ def oauth_token():
     return jsonify({'error': 'unsupported_grant_type'}), 400
 
 
-# Redirect landing page — needed so token leakage redirect resolves to 200
+# Redirect landing page - needed so token leakage redirect resolves to 200
 @app.route('/callback', methods=['GET'])
 def oauth_callback():
     return jsonify({'status': 'callback received', 'params': dict(request.args)})
@@ -423,7 +423,7 @@ def transfer_secure():
     if not account:
         return jsonify({'error': 'Account not found'}), 404
     if account['owner_id'] != user['user_id']:
-        return jsonify({'error': 'Forbidden — you do not own this account'}), 403
+        return jsonify({'error': 'Forbidden - you do not own this account'}), 403
 
     return jsonify({'status': 'success', 'message': 'Transfer completed'})
 
@@ -436,7 +436,7 @@ if __name__ == '__main__':
     # Degrade unencodable characters instead of aborting.
     for _stream in (sys.stdout, sys.stderr):
         # These are TextIOWrapper at runtime but typed as the narrower TextIO,
-        # which does not declare reconfigure() — resolve it dynamically.
+        # which does not declare reconfigure() - resolve it dynamically.
         _reconfigure = getattr(_stream, 'reconfigure', None)
         if _reconfigure is not None:
             with contextlib.suppress(ValueError):

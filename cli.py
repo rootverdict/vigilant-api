@@ -120,7 +120,7 @@ def main(spec, tokens, ids, output, skip, callback, oauth_config_file,
          delay, insecure, proxy, verbose, active, max_requests, read_map):
     """
     \b
-    Vigilant-API v1.0 — API Security Scanner
+    Vigilant-API v1.0 - API Security Scanner
     Detects BOLA/IDOR, SSRF, and OAuth flaws via automated testing.
     """
 
@@ -144,7 +144,7 @@ def main(spec, tokens, ids, output, skip, callback, oauth_config_file,
         click.echo(f'[ERROR] Tokens file is not valid UTF-8 text: {e}', err=True)
         sys.exit(2)
     except OSError as e:
-        # os.path.exists() above only proves the path resolves — it may still be
+        # os.path.exists() above only proves the path resolves - it may still be
         # a directory or be unreadable. Exit 2 ("scan failed"), never 1, which
         # the CI gate reserves for CRITICAL/HIGH findings.
         click.echo(f'[ERROR] Could not read tokens file "{tokens}": {e}', err=True)
@@ -247,8 +247,8 @@ def main(spec, tokens, ids, output, skip, callback, oauth_config_file,
         # Last-resort guard: any unexpected failure during a scan (e.g. a
         # network error escaping a detector) must exit with code 2 ("scan
         # failed to complete"). Without this an uncaught traceback exits with
-        # Python's default code 1 — the signal the CI gate reserves for
-        # CRITICAL/HIGH findings — so an infrastructure failure would be
+        # Python's default code 1 - the signal the CI gate reserves for
+        # CRITICAL/HIGH findings - so an infrastructure failure would be
         # misreported as a security finding.
         click.echo(f'[ERROR] Scan failed unexpectedly: {e}', err=True)
         sys.exit(2)

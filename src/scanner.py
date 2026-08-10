@@ -38,7 +38,7 @@ class Scanner:
           resource_ids   : list of ints to probe for BOLA   (default [1,2,3,4,5])
           oauth_config   : dict with auth_url, token_url, client_id etc. (optional)
           output_dir     : where to write reports (default 'reports')
-          callback_url   : blind SSRF callback — omit to skip blind SSRF check
+          callback_url   : blind SSRF callback - omit to skip blind SSRF check
           skip           : list of check names to skip (optional)
           delay          : seconds between requests for rate limiting (default 0)
           insecure       : if True, skip TLS certificate verification (default False)
@@ -111,7 +111,7 @@ class Scanner:
         if oa is not None:
             if not isinstance(oa, dict):
                 raise ValueError('[ERROR] OAuth config must be a JSON object.')
-            # Validate required keys before instantiating — gives a clear error message
+            # Validate required keys before instantiating - gives a clear error message
             missing = _REQUIRED_OAUTH_KEYS - set(oa.keys())
             if missing:
                 raise ValueError(
@@ -119,7 +119,7 @@ class Scanner:
                     f'{", ".join(sorted(missing))}. '
                     f'Required: {", ".join(sorted(_REQUIRED_OAUTH_KEYS))}'
                 )
-            # Filter to only the keys OAuthFlawDetector accepts — extra keys in the
+            # Filter to only the keys OAuthFlawDetector accepts - extra keys in the
             # JSON (e.g. comments, descriptions) would cause unexpected-kwarg errors.
             _KNOWN_OAUTH_KEYS = {'auth_url', 'token_url', 'client_id', 'client_secret',
                                  'redirect_uri', 'auth_code'}
@@ -189,15 +189,15 @@ class Scanner:
             # --- BOLA / IDOR ---
             anonymous_allowed = self._allows_anonymous(security)
             # Run BOLA when the endpoint is not anonymous and exposes a probe
-            # surface — any of:
+            # surface - any of:
             #   1. Path has any {param}    → Simple IDOR, Indirect Reference
             #   2. Method accepts a body   → Body IDOR, Mass Assignment
             #   3. Query param contains id → Parameter Pollution
             if ('bola' not in self.skip and not anonymous_allowed
                     and self._has_bola_surface(method, params)):
                 # __init__ rejects a <2-user config whenever any endpoint
-                # exposes a non-anonymous BOLA surface — exactly the condition
-                # guarding this block — so self.bola is always set here.
+                # exposes a non-anonymous BOLA surface - exactly the condition
+                # guarding this block - so self.bola is always set here.
                 assert self.bola is not None
                 findings = self.bola.test_endpoint(
                     method, path, self.resource_ids, params=params,
@@ -310,7 +310,7 @@ class Scanner:
         callback = self.config.get('callback_url') or 'none (blind SSRF skipped)'
         mode = 'ACTIVE (write requests enabled)' if self.active else 'SAFE (read-only methods)'
         print(f'\n{Fore.CYAN}{"="*60}')
-        print('  Vigilant-API v1.0 — API Security Scanner')
+        print('  Vigilant-API v1.0 - API Security Scanner')
         print(f'  Target    : {target}')
         print(f'  Endpoints : {endpoint_count}')
         print(f'  Delay     : {delay}s  |  Verify TLS: {not insecure}')
@@ -340,7 +340,7 @@ class Scanner:
         mins, secs = divmod(int(elapsed), 60)
         duration = f'{mins}m {secs}s' if mins else f'{secs}s'
         print(f'\n{Fore.CYAN}{"="*60}')
-        print(f'  Scan Complete — {total} finding(s)  [{duration}]')
+        print(f'  Scan Complete - {total} finding(s)  [{duration}]')
         print(f'  CRITICAL: {summary["CRITICAL"]}  HIGH: {summary["HIGH"]}  '
               f'MEDIUM: {summary["MEDIUM"]}  LOW: {summary["LOW"]}  INFO: {summary["INFO"]}')
         print(f'\n  JSON report : {json_path}')

@@ -4,12 +4,12 @@ ssrf_detector.py
 Detects Server-Side Request Forgery (SSRF) vulnerabilities.
 
 Five sub-checks:
-  1. Basic SSRF       – inject metadata URL into url/uri params, see if response leaks data
-  2. Blind SSRF       – inject a callback URL (Burp Collaborator / ngrok) — skipped if no
+  1. Basic SSRF       - inject metadata URL into url/uri params, see if response leaks data
+  2. Blind SSRF       - inject a callback URL (Burp Collaborator / ngrok) - skipped if no
                         --callback provided
-  3. SSRF via Redirect– inject a URL that redirects to the metadata endpoint
-  4. Protocol Smuggling– try file://, dict://, gopher:// schemes
-  5. Partial SSRF     – server fetches external URLs but filters partially (bypass via @, [])
+  3. SSRF via Redirect- inject a URL that redirects to the metadata endpoint
+  4. Protocol Smuggling- try file://, dict://, gopher:// schemes
+  5. Partial SSRF     - server fetches external URLs but filters partially (bypass via @, [])
 
 All findings include the payload used and a body preview as forensic evidence.
 """
@@ -148,14 +148,14 @@ class SSRFDetector:
         Inject a callback URL and check if the server reflects it in the response.
 
         True blind SSRF confirmation requires an out-of-band listener (Burp
-        Collaborator / ngrok) — the scanner cannot observe DNS/HTTP hits on its
+        Collaborator / ngrok) - the scanner cannot observe DNS/HTTP hits on its
         own. This check is a best-effort in-band signal: if the server echoes
         the callback URL in its response body, the request was likely processed.
 
         Skipped entirely when no --callback URL was provided.
         """
         if not self.callback_url:
-            return []   # no callback configured — skip rather than fire useless requests
+            return []   # no callback configured - skip rather than fire useless requests
 
         if self.verbose:
             print(f'      [SSRF] Blind  param={param["name"]}  callback={self.callback_url}')
@@ -164,11 +164,11 @@ class SSRFDetector:
                              param['in'], param.get('path'))
         # Only flag if the callback URL is reflected in the response body.
         # A plain 200 response (without the URL in the body) is not evidence of
-        # SSRF — it just means the server didn't reject the input, which is normal
+        # SSRF - it just means the server didn't reject the input, which is normal
         # for many endpoints and would cause high false-positive rates.
         if resp and self.callback_url in resp.text:
             return [self._make_finding(
-                check='Blind SSRF (unconfirmed — in-band signal only)',
+                check='Blind SSRF (unconfirmed - in-band signal only)',
                 url=url,
                 param=param['name'],
                 payload=self.callback_url,
@@ -177,7 +177,7 @@ class SSRFDetector:
                 severity='LOW',
                 description=(
                     f'Server reflected the callback URL "{self.callback_url}" in its response body. '
-                    'This is a weak in-band signal only — it does NOT confirm that the server made '
+                    'This is a weak in-band signal only - it does NOT confirm that the server made '
                     'an outbound request to the callback URL. '
                     'REQUIRED: Check your out-of-band listener (Burp Collaborator / ngrok / interactsh) '
                     'for an actual DNS or HTTP hit. Only escalate severity if OOB hit confirmed.'
@@ -317,7 +317,7 @@ class SSRFDetector:
                     # would turn '%09' into '%2509', which is a different byte and
                     # causes the bypass to silently fail (false negative).
                     if re.search(r'%[0-9A-Fa-f]{2}', payload):
-                        encoded_payload = payload          # already encoded — pass through
+                        encoded_payload = payload          # already encoded - pass through
                     else:
                         encoded_payload = _urlquote(payload, safe='')
                     resp = requests.request(
@@ -375,13 +375,13 @@ class SSRFDetector:
                 if resp.status_code == 429:
                     wait = (2 ** attempt) * max(self.delay, 1.0)
                     if self.verbose:
-                        print(f'      [SSRF] 429 rate-limited — retrying in {wait:.1f}s')
+                        print(f'      [SSRF] 429 rate-limited - retrying in {wait:.1f}s')
                     time.sleep(wait)
                     continue
                 if resp.status_code >= 500:
                     wait = (2 ** attempt) * max(self.delay, 0.5)
                     if self.verbose:
-                        print(f'      [SSRF] {resp.status_code} server error — retrying in {wait:.1f}s')
+                        print(f'      [SSRF] {resp.status_code} server error - retrying in {wait:.1f}s')
                     time.sleep(wait)
                     continue
                 if self.delay > 0:
@@ -398,7 +398,7 @@ class SSRFDetector:
             child = node.setdefault(part, {})
             if not isinstance(child, dict):
                 # A sibling param already claimed this key as a scalar. Overwrite
-                # it with a container rather than raising — probing the nested
+                # it with a container rather than raising - probing the nested
                 # field matters more than preserving a filler value.
                 child = {}
                 node[part] = child

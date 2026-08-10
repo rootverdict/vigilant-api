@@ -82,7 +82,7 @@ In active mode, POST, PUT, and PATCH bodies are tested with privileged fields:
 
 A **MEDIUM** finding means the response reflected the submitted value but
 persistence could not be confirmed (no matching read endpoint, or the value did
-not survive a read-back) — confirm manually before escalating.
+not survive a read-back) - confirm manually before escalating.
 
 A **HIGH** finding means the value was also confirmed persisted: after the write,
 the detector reads the resource back through a paired GET endpoint (matched
@@ -110,7 +110,7 @@ The scanner injects AWS, GCP, and Azure metadata endpoints. A finding requires
 response evidence such as AWS credential keys, AMI identifiers, or cloud-provider
 metadata markers.
 
-A raw metadata IP address in the response body is **not** evidence — an endpoint
+A raw metadata IP address in the response body is **not** evidence - an endpoint
 that echoes the submitted URL would otherwise produce a false positive. The
 injected payload is stripped from the body before matching, so reflection alone
 never yields a finding.

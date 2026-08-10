@@ -1,7 +1,7 @@
 """
 tests/test_spec_parser.py
 --------------------------
-Unit tests for OpenAPIParser — spec loading, base URL extraction,
+Unit tests for OpenAPIParser - spec loading, base URL extraction,
 endpoint enumeration, and URL-param classification.
 """
 
@@ -84,7 +84,7 @@ class TestGetBaseUrl:
 
     def test_missing_servers_falls_back_to_localhost(self, tmp_path):
         # When 'servers' key is absent, the parser gracefully defaults to
-        # http://localhost:5000 rather than raising — matches actual behaviour.
+        # http://localhost:5000 rather than raising - matches actual behaviour.
         spec = textwrap.dedent("""\
             openapi: "3.0.3"
             info:

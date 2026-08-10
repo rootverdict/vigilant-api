@@ -2,15 +2,15 @@
 auth.py
 -------
 Handles three auth schemes that Vigilant-API supports:
-    1. Bearer JWT  – pass the raw token
-    2. API Key     – passed as header or query param
-    3. OAuth 2.0   – Resource Owner Password Credentials grant (for automation)
+    1. Bearer JWT  - pass the raw token
+    2. API Key     - passed as header or query param
+    3. OAuth 2.0   - Resource Owner Password Credentials grant (for automation)
 
 Produces a ready-to-use requests.Session with auth baked in.
 """
 
 import requests
-import jwt                  # PyJWT – used for token inspection only
+import jwt                  # PyJWT - used for token inspection only
 from datetime import datetime, timezone
 from typing import Any
 
@@ -160,10 +160,10 @@ class AuthHandler:
         try:
             header = jwt.get_unverified_header(token)
         except Exception:
-            return None   # not a JWT (opaque token) — skip
+            return None   # not a JWT (opaque token) - skip
 
         # `alg` may be missing, null, or a non-string in a malformed/hostile
-        # token header — coerce defensively so a bad token can't crash the scan.
+        # token header - coerce defensively so a bad token can't crash the scan.
         alg = str(header.get('alg') or '').lower()
 
         if alg == 'none':

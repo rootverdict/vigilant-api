@@ -2,8 +2,8 @@
 reporter.py
 -----------
 Generates two output formats from a list of findings:
-  1. JSON report  – machine-readable, CI/CD-friendly
-  2. HTML report  – human-readable, send to client / interviewer
+  1. JSON report  - machine-readable, CI/CD-friendly
+  2. HTML report  - human-readable, send to client / interviewer
 
 The HTML template is embedded as a Jinja2 string (no external files needed).
 It includes:
@@ -93,7 +93,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         <span class="mock-badge">mock-server only</span>{% endif %}</td>
       <td><span class="badge badge-{{ vuln.severity }}">{{ vuln.severity }}</span></td>
       <td>
-        <span class="code">{% if vuln.method %}{{ vuln.method }} {% endif %}{{ vuln.endpoint or '—' }}</span>
+        <span class="code">{% if vuln.method %}{{ vuln.method }} {% endif %}{{ vuln.endpoint or '-' }}</span>
         {% if vuln.parameter %}<br><small>param: {{ vuln.parameter }}</small>{% endif %}
         {% if vuln.resource_id %}<br><small>id: {{ vuln.resource_id }}</small>{% endif %}
       </td>
@@ -182,7 +182,7 @@ class ReportGenerator:
         html = template.render(
             generated_at     = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC'),
             target           = meta.get('target', 'Unknown'),
-            endpoints_tested = meta.get('endpoints_tested', '—'),
+            endpoints_tested = meta.get('endpoints_tested', '-'),
             total_findings   = len(findings),
             counts           = counts,
             findings         = rendered_findings,

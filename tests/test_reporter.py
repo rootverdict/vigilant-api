@@ -1,6 +1,6 @@
 """Tests for report generation.
 
-The HTML report embeds data captured from the *target* — response bodies,
+The HTML report embeds data captured from the *target* - response bodies,
 payloads, endpoint paths. That data is attacker-influenced, so the escaping
 behaviour of the template is a security property of the tool itself, not a
 cosmetic detail: an analyst opens report.html locally, and an unescaped
@@ -52,7 +52,7 @@ class TestHtmlEscaping:
         assert '&lt;script&gt;' in html
 
     def test_script_in_target_metadata_is_escaped(self, tmp_path):
-        """Scan metadata is rendered outside the findings loop — escape it too."""
+        """Scan metadata is rendered outside the findings loop - escape it too."""
         generator = ReportGenerator(str(tmp_path))
         path = generator.generate_html(
             [],

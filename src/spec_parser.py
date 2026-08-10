@@ -9,7 +9,7 @@ $ref support
 In-document JSON Pointer refs (#/components/...) are resolved automatically
 before parameter extraction, as are local external-file refs (./other.yaml,
 optionally with a #/... fragment).  Remote HTTP(S) refs are deliberately not
-fetched — resolving them would make spec parsing perform network I/O — and are
+fetched - resolving them would make spec parsing perform network I/O - and are
 skipped with a warning, as is any ref that cannot be resolved.
 """
 
@@ -39,7 +39,7 @@ class OpenAPIParser:
         except UnicodeDecodeError as e:
             raise ValueError(f'[ERROR] Spec file "{spec_file}" is not valid UTF-8 text: {e}') from e
         except OSError as e:
-            # The caller's os.path.exists() check only proves the path resolves —
+            # The caller's os.path.exists() check only proves the path resolves -
             # it may still be a directory or be unreadable. Surface it as ValueError
             # so the CLI maps it to exit 2 ("scan failed") rather than letting an
             # OSError escape as exit 1, the code reserved for CRITICAL/HIGH findings.
@@ -61,7 +61,7 @@ class OpenAPIParser:
         e.g. ('GET', '/transactions/{id}', [...], [...])
         """
         endpoints: list = []
-        # `paths` may be null or a non-mapping in a malformed spec — coerce to an
+        # `paths` may be null or a non-mapping in a malformed spec - coerce to an
         # empty dict so iteration can't crash the scan.
         paths = self.spec.get('paths')
         if not isinstance(paths, dict):
@@ -112,7 +112,7 @@ class OpenAPIParser:
         """Return query/path params that accept a URL value (for SSRF probing).
 
         Uses substring matching so params like 'callback_url', 'redirect_uri',
-        'target_url', 'webhook_url' are all caught — not just exact names.
+        'target_url', 'webhook_url' are all caught - not just exact names.
         """
         url_keywords = ('url', 'uri', 'endpoint', 'redirect', 'callback',
                         'next', 'src', 'dest', 'target', 'webhook', 'proxy', 'host')
@@ -251,15 +251,15 @@ class OpenAPIParser:
         params = []
         seen = set()
 
-        # `or []` guards against `parameters: null` in the YAML spec — without
+        # `or []` guards against `parameters: null` in the YAML spec - without
         # it, `list(None)` raises TypeError and aborts the entire scan.
         for raw_param in list(path_params or []) + list(details.get('parameters') or []):
-            # Resolve $ref before accessing fields — handles specs that define
+            # Resolve $ref before accessing fields - handles specs that define
             # reusable parameters under #/components/parameters/.
             param = self._resolve_ref(raw_param)
 
             # A parameter entry that isn't an object (e.g. a bare string in a
-            # malformed spec) has no name/location — skip it rather than crash.
+            # malformed spec) has no name/location - skip it rather than crash.
             if not isinstance(param, dict):
                 continue
 

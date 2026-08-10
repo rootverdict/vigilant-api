@@ -4,7 +4,7 @@ tests/test_ssrf_detector.py
 Unit tests for SSRFDetector helpers:
   - _contains_metadata   (pattern matching)
   - _make_finding        (finding dict structure)
-  - _request             (param_in dispatch — mocked, no real network)
+  - _request             (param_in dispatch - mocked, no real network)
 """
 
 import os
@@ -123,7 +123,7 @@ class TestMakeFinding:
 class TestRequestDispatch:
     """
     Verify that _request sends the payload via the correct mechanism
-    depending on param_in — without making real network calls.
+    depending on param_in - without making real network calls.
     """
 
     MOCK_URL   = 'http://localhost:5000/fetch'
@@ -252,7 +252,7 @@ class TestBlindSSRF:
 
     @patch('ssrf_detector.requests.request')
     def test_finding_states_it_is_unconfirmed(self, mock_req):
-        """Severity alone is easy to misread — the text must say it is unconfirmed
+        """Severity alone is easy to misread - the text must say it is unconfirmed
         and name the out-of-band step required to escalate."""
         mock_req.return_value = _mock_response(text=self.CALLBACK)
         detector = SSRFDetector(callback_url=self.CALLBACK)

@@ -137,7 +137,7 @@ For another authorization server:
 
 | Key | Purpose |
 |---|---|
-| `auth_code` | A real, freshly-issued authorization code. When present, the code-reuse check exchanges *this* code twice against a live server instead of a synthetic one — turning it from a mock-only check into a genuine test. Capture it from a browser login, then run the scan promptly (codes are short-lived and single-use). |
+| `auth_code` | A real, freshly-issued authorization code. When present, the code-reuse check exchanges *this* code twice against a live server instead of a synthetic one - turning it from a mock-only check into a genuine test. Capture it from a browser login, then run the scan promptly (codes are short-lived and single-use). |
 
 The token-leakage check needs no extra config: it probes the real implicit grant
 (`response_type=token`) against `auth_url` and flags any access token returned in
@@ -255,7 +255,7 @@ python cli.py \
   --ids 1,2,3
 ```
 
-`sample_specs/dummyjson_tokens.json` is generated, not tracked — the repository
+`sample_specs/dummyjson_tokens.json` is generated, not tracked - the repository
 ships `dummyjson_tokens.json.example` as its shape. The refresh script writes real
 access tokens there, so it is deliberately git-ignored; never commit the generated
 file.

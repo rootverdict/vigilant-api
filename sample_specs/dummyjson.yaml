@@ -1,10 +1,10 @@
 openapi: "3.0.3"
 info:
-  title: DummyJSON API — Vigilant-API Test Target
+  title: DummyJSON API - Vigilant-API Test Target
   description: >
     Public fake REST API at dummyjson.com.
     Used to demonstrate Vigilant-API against a real external target.
-    DummyJSON is intentionally open — it will trigger BOLA/IDOR and JWT findings.
+    DummyJSON is intentionally open - it will trigger BOLA/IDOR and JWT findings.
   version: "1.0.0"
 
 servers:
@@ -12,7 +12,7 @@ servers:
 
 paths:
 
-  # ── User resources — BOLA targets ──────────────────────────────────
+  # ── User resources - BOLA targets ──────────────────────────────────
 
   /users/{id}:
     get:
@@ -94,7 +94,7 @@ paths:
       security:
         - BearerAuth: []
 
-  # ── Post resources — BOLA targets ─────────────────────────────────
+  # ── Post resources - BOLA targets ─────────────────────────────────
 
   /posts/{id}:
     get:
@@ -136,7 +136,7 @@ paths:
       security:
         - BearerAuth: []
 
-  # ── Cart resources — BOLA targets ─────────────────────────────────
+  # ── Cart resources - BOLA targets ─────────────────────────────────
 
   /carts/{id}:
     get:
@@ -150,7 +150,7 @@ paths:
       security:
         - BearerAuth: []
 
-  # ── Todo resources — BOLA targets ─────────────────────────────────
+  # ── Todo resources - BOLA targets ─────────────────────────────────
 
   /todos/{id}:
     get:

@@ -3,13 +3,13 @@ oauth_detector.py
 -----------------
 Detects common OAuth 2.0 implementation flaws:
 
-  1. State integrity failure – authorization response changes/omits client state
-  2. Token leakage in Referer – access_token in URL → leaked via Referer header
-  3. Improper scope validation – server grants more scope than requested
-  4. Authorization code reuse – server accepts the same code twice
-  5. Open redirect abuse       – redirect_uri not validated → steal auth code
+  1. State integrity failure - authorization response changes/omits client state
+  2. Token leakage in Referer - access_token in URL → leaked via Referer header
+  3. Improper scope validation - server grants more scope than requested
+  4. Authorization code reuse - server accepts the same code twice
+  5. Open redirect abuse       - redirect_uri not validated → steal auth code
 
-These are logic flaws — they can't be found by a port scanner.
+These are logic flaws - they can't be found by a port scanner.
 They require understanding the OAuth flow and probing the authorization server.
 """
 
@@ -69,11 +69,11 @@ class OAuthFlawDetector:
                 'freshly-issued code to test a live server.'
             )
         findings = []
-        # Read-only probes against the authorization endpoint — safe in any mode.
+        # Read-only probes against the authorization endpoint - safe in any mode.
         findings += self._check_state_integrity()
         findings += self._check_open_redirect()
         findings += self._check_token_leakage_in_url()
-        # Token-endpoint probes that request/consume tokens — write-ish, gated.
+        # Token-endpoint probes that request/consume tokens - write-ish, gated.
         if self.active:
             findings += self._check_improper_scope()
             findings += self._check_code_reuse()
@@ -140,7 +140,7 @@ class OAuthFlawDetector:
     def _check_token_leakage_in_url(self) -> list:
         """
         Probe the OAuth 2.0 implicit grant (`response_type=token`). A server that
-        honours it returns the access token in the redirect URL — in the fragment
+        honours it returns the access token in the redirect URL - in the fragment
         (classic implicit) or, worse, the query string. Tokens in the URL leak via
         Referer headers, browser history, and server logs.
 
@@ -297,13 +297,13 @@ class OAuthFlawDetector:
         resp2 = self._request('POST', self.token_url, data=payload)
 
         # With a real code, a rejected first exchange means the code was already
-        # spent or expired — the test could not run, so report nothing rather than
+        # spent or expired - the test could not run, so report nothing rather than
         # a misleading negative.
         if is_real and resp1 and resp1.status_code != 200:
             if self.verbose:
                 print(
                     f'      [OAuth] Supplied auth_code was not accepted '
-                    f'(HTTP {resp1.status_code}) — it may be expired or already used. '
+                    f'(HTTP {resp1.status_code}) - it may be expired or already used. '
                     'Code-reuse check skipped.'
                 )
             return []
@@ -427,13 +427,13 @@ class OAuthFlawDetector:
                 if resp.status_code == 429:
                     wait = (2 ** attempt) * max(self.delay, 1.0)
                     if self.verbose:
-                        print(f'      [OAuth] 429 rate-limited — retrying in {wait:.1f}s')
+                        print(f'      [OAuth] 429 rate-limited - retrying in {wait:.1f}s')
                     time.sleep(wait)
                     continue
                 if resp.status_code >= 500:
                     wait = (2 ** attempt) * max(self.delay, 0.5)
                     if self.verbose:
-                        print(f'      [OAuth] {resp.status_code} server error — retrying in {wait:.1f}s')
+                        print(f'      [OAuth] {resp.status_code} server error - retrying in {wait:.1f}s')
                     time.sleep(wait)
                     continue
                 if self.delay > 0:
