@@ -33,9 +33,9 @@ def _make_jwt(header: dict, payload: dict = None) -> str:
     Build a JWT with the given header dict that PyJWT can parse with
     get_unverified_header().
 
-    - alg=none  → empty signature segment (RFC 7515 §6)
-    - alg=HS256 → PyJWT encode with a dummy secret (gives a real signature)
-    - anything else (RS256/ES256/...) → random base64url signature; PyJWT only
+    - alg=none  -> empty signature segment (RFC 7515 section 6)
+    - alg=HS256 -> PyJWT encode with a dummy secret (gives a real signature)
+    - anything else (RS256/ES256/...) -> random base64url signature; PyJWT only
       reads the header so the signature content does not matter for header tests
     """
     claims = payload or {'sub': 'test', 'iat': 1700000000}
@@ -52,10 +52,10 @@ def _make_jwt(header: dict, payload: dict = None) -> str:
     p = _b64url(claims)
 
     if alg == 'none':
-        # RFC 7515 §6: unsecured JWT has an empty signature segment
+        # RFC 7515 section 6: unsecured JWT has an empty signature segment
         return f'{h}.{p}.'
 
-    # For asymmetric algorithms (RS256, ES256, PS256, …) we don't have a real
+    # For asymmetric algorithms (RS256, ES256, PS256, ...) we don't have a real
     # private key, but get_unverified_header() only decodes the header segment -
     # it does not validate the signature.  A random 32-byte base64url dummy is
     # syntactically acceptable.
@@ -114,7 +114,7 @@ class TestAlgHS256:
         assert 'informational' in finding['check'].lower() or 'hs256' in finding['check'].lower()
 
 
-# ── Tests: acceptable algorithms → no finding ─────────────────────────────────
+# ── Tests: acceptable algorithms -> no finding ─────────────────────────────────
 
 class TestAcceptableAlgorithms:
 

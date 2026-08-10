@@ -5,16 +5,16 @@ A deliberately vulnerable Flask server.
 Use this to test Vigilant-API locally without a real target.
 
 INTENTIONAL VULNERABILITIES (for learning):
-  - /transactions/<id>   → BOLA: no ownership check, any token reads any record
-  - /profile/<id>        → BOLA: same issue for user profiles
-  - /fetch               → SSRF: fetches any URL via query param - simulates cloud metadata leak
-  - /proxy               → SSRF: fetches any URL via X-Target-URL header - tests header-based SSRF
-  - /transfer            → Body IDOR: accepts any from_account_id without ownership check
-  - /export              → Parameter Pollution: ?id=X&id=Y uses last value
-  - /resource/<ref>      → Indirect Reference: base64/hex/int encodings accepted, no ownership check
-  - /user/update         → Mass Assignment + Body IDOR: merges all fields including privileged ones
-  - /oauth/authorize     → Open redirect: any redirect_uri accepted
-  - /oauth/token         → Token leakage + Scope bypass + Code reuse
+  - /transactions/<id>   -> BOLA: no ownership check, any token reads any record
+  - /profile/<id>        -> BOLA: same issue for user profiles
+  - /fetch               -> SSRF: fetches any URL via query param - simulates cloud metadata leak
+  - /proxy               -> SSRF: fetches any URL via X-Target-URL header - tests header-based SSRF
+  - /transfer            -> Body IDOR: accepts any from_account_id without ownership check
+  - /export              -> Parameter Pollution: ?id=X&id=Y uses last value
+  - /resource/<ref>      -> Indirect Reference: base64/hex/int encodings accepted, no ownership check
+  - /user/update         -> Mass Assignment + Body IDOR: merges all fields including privileged ones
+  - /oauth/authorize     -> Open redirect: any redirect_uri accepted
+  - /oauth/token         -> Token leakage + Scope bypass + Code reuse
 
 Run with:
     cd mock_server
@@ -131,7 +131,7 @@ def get_transaction(txn_id):
     txn = TRANSACTIONS.get(txn_id)
     if not txn:
         return jsonify({'error': 'Not found'}), 404
-    return jsonify(txn)   # ← BOLA: returns data to any user, not just the owner
+    return jsonify(txn)   # <- BOLA: returns data to any user, not just the owner
 
 
 # ❌ VULNERABLE: Same issue for profile
@@ -196,7 +196,7 @@ def fetch_url():
         return jsonify({'status': 200, 'body': body})
 
     try:
-        resp = ext_requests.get(url, timeout=5)   # ← SSRF: no allowlist, fetches anything
+        resp = ext_requests.get(url, timeout=5)   # <- SSRF: no allowlist, fetches anything
         return jsonify({'status': resp.status_code, 'body': resp.text[:500]})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -211,7 +211,7 @@ def transfer():
     to_id   = data.get('to_account_id')
     amount  = data.get('amount', 0)
 
-    # ← BOLA: should check ACCOUNTS[from_id]['owner_id'] == user['user_id']
+    # <- BOLA: should check ACCOUNTS[from_id]['owner_id'] == user['user_id']
     # But it doesn't! Any user can transfer from any account.
     if from_id not in ACCOUNTS:
         return jsonify({'error': 'Source account not found'}), 404
@@ -229,7 +229,7 @@ def transfer():
 @app.route('/export', methods=['GET'])
 def export():
     require_auth()
-    ids = request.args.getlist('id')   # e.g. ?id=1&id=2 → ['1','2']
+    ids = request.args.getlist('id')   # e.g. ?id=1&id=2 -> ['1','2']
     if not ids:
         return jsonify({'error': 'id param required'}), 400
 
@@ -271,7 +271,7 @@ def get_resource_by_ref(ref):
     txn = TRANSACTIONS.get(resource_id)
     if not txn:
         return jsonify({'error': 'Not found'}), 404
-    return jsonify(txn)   # ← BOLA: no ownership check - any user can decode any ID
+    return jsonify(txn)   # <- BOLA: no ownership check - any user can decode any ID
 
 
 # ❌ VULNERABLE: Mass Assignment - binds raw request body to user record
@@ -281,7 +281,7 @@ def update_user():
     user = require_auth()
     data = request.get_json() or {}
 
-    # ← Mass Assignment: merges ALL request fields into user dict including
+    # <- Mass Assignment: merges ALL request fields into user dict including
     #   privileged fields that should never be user-controllable.
     #   A real ORM equivalent would be: User.update_attributes(params)
     merged = {**user, **data}
@@ -301,7 +301,7 @@ def get_account_profile():
 def update_account_profile():
     require_auth()
     data = request.get_json() or {}
-    ACCOUNT_PROFILE.update(data)   # ← persists ALL fields, no allowlist
+    ACCOUNT_PROFILE.update(data)   # <- persists ALL fields, no allowlist
     return jsonify(ACCOUNT_PROFILE)
 
 
@@ -338,7 +338,7 @@ def oauth_authorize():
     if response_type != 'code':
         return jsonify({'error': 'unsupported_response_type'}), 400
 
-    # ← Open redirect: redirect_uri never validated against allowlist -
+    # <- Open redirect: redirect_uri never validated against allowlist -
     #   any URI (including attacker-controlled) is accepted.
     # State is echoed when supplied. Requiring and validating it is the OAuth
     # client's responsibility, so omission alone is not a server-side finding.
@@ -359,7 +359,7 @@ def oauth_token():
         return jsonify({'error': 'invalid_client'}), 401
 
     if grant_type == 'implicit_test':
-        # ← Token leakage: redirects to callback with access_token in URL.
+        # <- Token leakage: redirects to callback with access_token in URL.
         #   Any page that loads external resources leaks it via Referer header.
         return redirect(
             f'{_REGISTERED_REDIRECT}?access_token={_OAUTH_ACCESS_TOKEN}',
@@ -367,7 +367,7 @@ def oauth_token():
         )
 
     if grant_type == 'client_credentials':
-        # ← Scope bypass: client requested "read:own" but server grants
+        # <- Scope bypass: client requested "read:own" but server grants
         #   "admin read write read:all" - no scope restriction enforced.
         return jsonify({
             'access_token': _OAUTH_ACCESS_TOKEN,
@@ -377,7 +377,7 @@ def oauth_token():
         })
 
     if grant_type == 'authorization_code':
-        # ← Code reuse: same code accepted every time - never invalidated.
+        # <- Code reuse: same code accepted every time - never invalidated.
         #   RFC 6749 requires single-use codes and token revocation on reuse.
         return jsonify({
             'access_token': _OAUTH_ACCESS_TOKEN,
@@ -405,7 +405,7 @@ def get_transaction_secure(txn_id):
     if not txn:
         return jsonify({'error': 'Not found'}), 404
     if txn['owner_id'] != user['user_id'] and user['role'] != 'admin':
-        return jsonify({'error': 'Forbidden'}), 403   # ← proper check
+        return jsonify({'error': 'Forbidden'}), 403   # <- proper check
     return jsonify(txn)
 
 

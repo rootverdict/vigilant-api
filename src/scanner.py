@@ -4,8 +4,8 @@ scanner.py
 The main orchestrator for Vigilant-API v1.
 
 Wires together:
-  OpenAPIParser → AuthHandler → BOLADetector + SSRFDetector + OAuthFlawDetector
-                              → ForensicLogger → ReportGenerator
+  OpenAPIParser -> AuthHandler -> BOLADetector + SSRFDetector + OAuthFlawDetector
+                              -> ForensicLogger -> ReportGenerator
 
 The CLI (cli.py) calls Scanner.run() and that's all it needs to know.
 """
@@ -190,9 +190,9 @@ class Scanner:
             anonymous_allowed = self._allows_anonymous(security)
             # Run BOLA when the endpoint is not anonymous and exposes a probe
             # surface - any of:
-            #   1. Path has any {param}    → Simple IDOR, Indirect Reference
-            #   2. Method accepts a body   → Body IDOR, Mass Assignment
-            #   3. Query param contains id → Parameter Pollution
+            #   1. Path has any {param}    -> Simple IDOR, Indirect Reference
+            #   2. Method accepts a body   -> Body IDOR, Mass Assignment
+            #   3. Query param contains id -> Parameter Pollution
             if ('bola' not in self.skip and not anonymous_allowed
                     and self._has_bola_surface(method, params)):
                 # __init__ rejects a <2-user config whenever any endpoint

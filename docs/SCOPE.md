@@ -7,9 +7,9 @@ Current version: `1.0.0`.
 
 ## V1 - Delivered
 
-The core pipeline is complete and works end-to-end: parse an OpenAPI spec →
-authenticate as multiple identities → run logic-layer detectors → emit forensic
-evidence and reports → return CI exit codes.
+The core pipeline is complete and works end-to-end: parse an OpenAPI spec ->
+authenticate as multiple identities -> run logic-layer detectors -> emit forensic
+evidence and reports -> return CI exit codes.
 
 | Area | Capabilities | Module |
 |---|---|---|
@@ -23,7 +23,7 @@ evidence and reports → return CI exit codes.
 | Reporting | JSON and HTML reports plus per-finding forensic evidence | `src/reporter.py` |
 | Integration | CI/CD exit codes (0/1/2), proxy support, `--verbose` | `cli.py` |
 | Robustness | Defensive parsing of malformed/hostile specs and JWT headers; scans fail safe instead of crashing | `src/spec_parser.py`, `src/auth.py`, `src/bola_detector.py`, `src/ssrf_detector.py` |
-| Dev infrastructure | Intentionally vulnerable mock server, sample specs, test suite, CI on Python 3.10/3.12, ≥70% coverage | `mock_server/`, `tests/` |
+| Dev infrastructure | Intentionally vulnerable mock server, sample specs, test suite, CI on Python 3.10/3.12, >=70% coverage | `mock_server/`, `tests/` |
 
 ### Robustness detail (V1 hardening)
 
@@ -55,7 +55,7 @@ fixed.
 | 1 | GraphQL / gRPC support | Today the scanner is REST/OpenAPI only. |
 | 2 | Remote HTTP `$ref` download | Only local external `$ref` files are resolved. |
 | 3 | Fully automated browser OAuth flow | Token leakage now probes the real implicit grant, and code reuse accepts a real `auth_code` via `--oauth-config` - both work against live servers. Automatically driving the login/consent screen to capture a code (Playwright/Selenium) remains outstanding. |
-| 4 | Multi-step stateful workflows | Endpoints are tested in isolation; no login → act → verify chains. |
+| 4 | Multi-step stateful workflows | Endpoints are tested in isolation; no login -> act -> verify chains. |
 | 5 | Adaptive / per-endpoint rate limiting | A single uniform delay is applied to all requests. |
 | 6 | New vulnerability families | e.g. BFLA (function-level authorization), excessive data exposure, injection, rate-limit abuse. |
 

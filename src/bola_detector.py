@@ -6,7 +6,7 @@ Detects BOLA (Broken Object Level Authorization) aka IDOR.
 Strategy: Differential Testing
   1. User A creates / owns resource #ID
   2. User B (different role) attempts to read the same #ID
-  3. If User B gets 200 + meaningful data → BOLA confirmed
+  3. If User B gets 200 + meaningful data -> BOLA confirmed
 
 Sub-checks:
   - Simple IDOR           : GET /resource/{id} with another user's token
@@ -50,7 +50,7 @@ class BOLADetector:
     }
 
     # Path segments that mark a write/action endpoint whose underlying resource
-    # is read back through the same base path (e.g. '/account/update' → '/account').
+    # is read back through the same base path (e.g. '/account/update' -> '/account').
     _ACTION_SUFFIXES = ('update', 'edit', 'modify', 'save', 'create', 'settings')
 
     def __init__(self, base_url: str, users: list,
@@ -271,7 +271,7 @@ class BOLADetector:
                          query_param: dict | None = None) -> list:
         """
         HTTP Parameter Pollution: send two values for the same id param.
-        Some servers use the first, some use the last → may bypass auth.
+        Some servers use the first, some use the last -> may bypass auth.
 
         e.g. GET /transactions?id=1&id=2
 
@@ -518,7 +518,7 @@ class BOLADetector:
           persisted to the database (a follow-up GET would require knowing the
           corresponding read endpoint, which cannot be inferred from the spec).
           Some APIs echo request fields without storing them (e.g. for
-          documentation/debugging purposes) → treat findings as "possible mass
+          documentation/debugging purposes) -> treat findings as "possible mass
           assignment" requiring manual confirmation.
 
         Severity is set to MEDIUM to reflect this uncertainty.
@@ -645,7 +645,7 @@ class BOLADetector:
         # 2. The same path is itself GET-able (e.g. GET+PATCH /account/profile).
         if write_path in read_paths:
             return write_path
-        # 3. Strip a trailing action segment ('/account/update' → '/account')
+        # 3. Strip a trailing action segment ('/account/update' -> '/account')
         #    and match the base directly or as a '/{id}' collection member.
         segments = write_path.rstrip('/').split('/')
         if segments and segments[-1].lower() in self._ACTION_SUFFIXES:
@@ -855,7 +855,7 @@ class BOLADetector:
             return False
         keys = set(body.keys())
         error_keys = {'error', 'detail', 'message', 'msg', 'status', 'code'}
-        # All keys are error-like → it's an error response, not real data
+        # All keys are error-like -> it's an error response, not real data
         return keys <= error_keys
 
     @staticmethod
@@ -890,11 +890,11 @@ class BOLADetector:
         Strategy:
           1. Both must be objects with at least 1 overlapping non-error scalar path.
           2. If any nested ID-like field (name contains 'id') has the same value in
-             both responses, the attacker received the owner's resource → IDOR.
+             both responses, the attacker received the owner's resource -> IDOR.
              Single matching ID field is sufficient - some resources are small
-             (e.g. {"id": 1, "status": "ok"}) and requiring ≥2 matches would
+             (e.g. {"id": 1, "status": "ok"}) and requiring >=2 matches would
              cause false negatives on those endpoints.
-          3. If no explicit ID field exists, require ≥2 matching non-trivial
+          3. If no explicit ID field exists, require >=2 matching non-trivial
              values to avoid flagging resources that happen to share a common
              constant field (e.g. {"status": "ok"}).
 
@@ -952,7 +952,7 @@ class BOLADetector:
                     return False
             return any(_ids_equal(flat1[path], flat2[path]) for path in id_paths)
 
-        # No explicit ID field - require ≥2 matching non-trivial values to
+        # No explicit ID field - require >=2 matching non-trivial values to
         # reduce false positives from resources with only a single shared field.
         # Use a tuple (not a set) so `not in` works for any value type including
         # lists and dicts - sets require hashable elements and would raise

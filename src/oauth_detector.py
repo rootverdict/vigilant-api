@@ -4,10 +4,10 @@ oauth_detector.py
 Detects common OAuth 2.0 implementation flaws:
 
   1. State integrity failure - authorization response changes/omits client state
-  2. Token leakage in Referer - access_token in URL → leaked via Referer header
+  2. Token leakage in Referer - access_token in URL -> leaked via Referer header
   3. Improper scope validation - server grants more scope than requested
   4. Authorization code reuse - server accepts the same code twice
-  5. Open redirect abuse       - redirect_uri not validated → steal auth code
+  5. Open redirect abuse       - redirect_uri not validated -> steal auth code
 
 These are logic flaws - they can't be found by a port scanner.
 They require understanding the OAuth flow and probing the authorization server.

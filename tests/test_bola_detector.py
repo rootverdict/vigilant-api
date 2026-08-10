@@ -80,12 +80,12 @@ class TestBodiesSimilar:
         assert detector._bodies_similar(b1, b2)
 
     def test_null_id_not_similar(self, detector):
-        """None IDs should not count as a match - fall through to ≥2 non-trivial check."""
+        """None IDs should not count as a match - fall through to >=2 non-trivial check."""
         b1 = {'id': None, 'status': 'ok'}
         b2 = {'id': None, 'status': 'ok'}
         # id key is present but value is None - _ids_equal guards against this.
         # Falls through to the non-ID path: "status": "ok" is only 1 non-trivial
-        # matching value → not similar (requires ≥2).
+        # matching value -> not similar (requires >=2).
         assert not detector._bodies_similar(b1, b2)
 
     def test_nested_resource_id_is_similar(self, detector):
@@ -117,7 +117,7 @@ class TestIsErrorBody:
     def test_empty_dict_not_error(self, detector):
         # Empty dict: keys <= error_keys vacuously, but useful resources
         # also have empty dicts; treat as not-an-error (no keys at all).
-        # Current impl: {} <= error_keys → True (empty set ≤ any set).
+        # Current impl: {} <= error_keys -> True (empty set <= any set).
         # This is an edge case; we document, not change, current behaviour.
         result = detector._is_error_body({})
         assert isinstance(result, bool)   # just ensure no exception
@@ -302,7 +302,7 @@ class TestMassAssignmentPersistence:
         )
 
     def test_persisted_field_upgrades_to_high(self):
-        """Reflection + read-back confirmation → HIGH, persistence_confirmed True."""
+        """Reflection + read-back confirmation -> HIGH, persistence_confirmed True."""
         active = self._active(['/account/profile'])
         reflect = MagicMock(status_code=200, content=b'{"role":"admin"}')
         reflect.json.return_value = {'role': 'admin'}
@@ -320,7 +320,7 @@ class TestMassAssignmentPersistence:
         assert findings[0]['evidence']['persistence_confirmed'] is True
 
     def test_reflection_without_persistence_stays_medium(self):
-        """Echo-only server (no read-back match) → MEDIUM, persistence_confirmed False."""
+        """Echo-only server (no read-back match) -> MEDIUM, persistence_confirmed False."""
         active = self._active(['/account/profile'])
         reflect = MagicMock(status_code=200, content=b'{"role":"admin"}')
         reflect.json.return_value = {'role': 'admin'}
@@ -338,7 +338,7 @@ class TestMassAssignmentPersistence:
         assert findings[0]['evidence']['persistence_confirmed'] is False
 
     def test_no_read_endpoint_stays_medium(self):
-        """No matching read endpoint → cannot verify → MEDIUM."""
+        """No matching read endpoint -> cannot verify -> MEDIUM."""
         active = self._active([])   # no GET endpoints known
         reflect = MagicMock(status_code=200, content=b'{"role":"admin"}')
         reflect.json.return_value = {'role': 'admin'}

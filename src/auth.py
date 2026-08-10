@@ -154,8 +154,8 @@ class AuthHandler:
         Returns a finding dict if a weakness is detected, else None.
 
         Detects:
-          - alg=none  : signature not verified → trivial forgery
-          - alg=HS256 : symmetric HMAC → secret must be strong; flags for awareness
+          - alg=none  : signature not verified -> trivial forgery
+          - alg=HS256 : symmetric HMAC -> secret must be strong; flags for awareness
         """
         try:
             header = jwt.get_unverified_header(token)
@@ -287,9 +287,9 @@ class AuthHandler:
             exp = payload.get('exp')
             if exp:
                 return datetime.now(timezone.utc).timestamp() >= exp
-            return False   # no exp claim → assume still valid
+            return False   # no exp claim -> assume still valid
         except Exception:
-            return False   # not a JWT (e.g. opaque token) → don't touch it
+            return False   # not a JWT (e.g. opaque token) -> don't touch it
 
 
 class CompositeAuthHandler:

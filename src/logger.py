@@ -99,9 +99,9 @@ class ForensicLogger:
         without re-running the scanner.
 
         Fields populated vary by detector type:
-          SSRF   → endpoint, parameter, evidence.payload, evidence.status_code, evidence.body_preview
-          BOLA   → endpoint, resource_id, unauthorized_user, evidence.payload / body_preview
-          OAuth  → endpoint (or check name), evidence keys vary
+          SSRF   -> endpoint, parameter, evidence.payload, evidence.status_code, evidence.body_preview
+          BOLA   -> endpoint, resource_id, unauthorized_user, evidence.payload / body_preview
+          OAuth  -> endpoint (or check name), evidence keys vary
         """
         endpoint  = finding.get('endpoint', '')
         method    = finding.get('method', '')

@@ -188,7 +188,7 @@ class TestRunAllChecks:
 
     @patch('oauth_detector.requests.request')
     def test_token_leakage_no_finding_when_token_absent(self, mock_req, detector):
-        # Implicit grant disabled → server redirects with an error, no token.
+        # Implicit grant disabled -> server redirects with an error, no token.
         mock_resp = MagicMock()
         mock_resp.status_code = 302
         mock_resp.headers = {
@@ -221,7 +221,7 @@ class TestRunAllChecks:
 
     @patch('oauth_detector.requests.request')
     def test_code_reuse_synthetic_is_flagged_mock_only(self, mock_req, detector):
-        # No auth_code supplied → synthetic code → evidence flags mock_only.
+        # No auth_code supplied -> synthetic code -> evidence flags mock_only.
         mock_req.return_value = MagicMock(status_code=200)
         findings = detector._check_code_reuse()
         assert findings[0]['evidence']['mock_only'] is True
@@ -244,7 +244,7 @@ class TestRunAllChecks:
 
     @patch('oauth_detector.requests.request')
     def test_code_reuse_real_code_skipped_when_first_exchange_rejected(self, mock_req):
-        # Real code already spent/expired → first exchange fails → check skipped.
+        # Real code already spent/expired -> first exchange fails -> check skipped.
         detector = OAuthFlawDetector(
             auth_url='http://localhost:5000/oauth/authorize',
             token_url='http://localhost:5000/oauth/token',
