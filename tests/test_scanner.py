@@ -216,6 +216,23 @@ class TestOAuthConfigValidation:
         }))
         assert scanner.oauth.client_id == 'c'
 
+    def test_rejected_config_creates_no_output_directory(self, tmp_path):
+        """The shape check runs before ForensicLogger, which calls os.makedirs on
+        construction. Validating after it left an empty reports/ behind on a run
+        that never started."""
+        reports = tmp_path / 'r'
+        with pytest.raises(ValueError, match='missing required keys'):
+            Scanner(self._cfg(tmp_path, {'auth_url': 'http://a'}))
+        assert not reports.exists()
+
+    def test_user_validation_is_reported_before_oauth_validation(self, tmp_path):
+        """Both configs are invalid; the user-count error must still win, so the
+        reordering above did not change which message the operator sees."""
+        cfg = _config(_spec(tmp_path), tmp_path / 'r', [], skip=['jwt'])
+        cfg['oauth_config'] = {'auth_url': 'http://a'}
+        with pytest.raises(ValueError, match='user token is required'):
+            Scanner(cfg)
+
     def test_absent_config_leaves_detector_unset(self, tmp_path):
         cfg = _config(_spec(tmp_path), tmp_path / 'r', _users(), skip=['jwt'])
         assert Scanner(cfg).oauth is None

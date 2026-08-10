@@ -77,6 +77,21 @@ class Scanner:
                 'Add a second user to your tokens file.'
             )
 
+        # OAuth config is shape-checked here, alongside the other local checks,
+        # rather than at detector construction below. Validating it after the
+        # output directory existed meant a rejected run still left reports/ behind.
+        oauth_config = config.get('oauth_config')
+        if oauth_config is not None:
+            if not isinstance(oauth_config, dict):
+                raise ValueError('[ERROR] OAuth config must be a JSON object.')
+            missing = _REQUIRED_OAUTH_KEYS - set(oauth_config.keys())
+            if missing:
+                raise ValueError(
+                    f'[ERROR] --oauth-config is missing required keys: '
+                    f'{", ".join(sorted(missing))}. '
+                    f'Required: {", ".join(sorted(_REQUIRED_OAUTH_KEYS))}'
+                )
+
         # Output directories are created only after all local configuration
         # validation succeeds.
         self.logger   = ForensicLogger(config.get('output_dir', 'reports'))
@@ -106,24 +121,14 @@ class Scanner:
         ) if len(users) >= 2 else None
         self.ssrf = SSRFDetector(config.get('callback_url'), **det_opts)
 
-        # OAuth detector is optional (only if oauth_config provided)
-        oa = config.get('oauth_config')
-        if oa is not None:
-            if not isinstance(oa, dict):
-                raise ValueError('[ERROR] OAuth config must be a JSON object.')
-            # Validate required keys before instantiating - gives a clear error message
-            missing = _REQUIRED_OAUTH_KEYS - set(oa.keys())
-            if missing:
-                raise ValueError(
-                    f'[ERROR] --oauth-config is missing required keys: '
-                    f'{", ".join(sorted(missing))}. '
-                    f'Required: {", ".join(sorted(_REQUIRED_OAUTH_KEYS))}'
-                )
+        # OAuth detector is optional (only if oauth_config provided).
+        # Shape and required keys were already validated above.
+        if oauth_config is not None:
             # Filter to only the keys OAuthFlawDetector accepts - extra keys in the
             # JSON (e.g. comments, descriptions) would cause unexpected-kwarg errors.
             _KNOWN_OAUTH_KEYS = {'auth_url', 'token_url', 'client_id', 'client_secret',
                                  'redirect_uri', 'auth_code'}
-            filtered_oa = {k: v for k, v in oa.items() if k in _KNOWN_OAUTH_KEYS}
+            filtered_oa = {k: v for k, v in oauth_config.items() if k in _KNOWN_OAUTH_KEYS}
             self.oauth = OAuthFlawDetector(**filtered_oa, **det_opts)
         else:
             self.oauth = None

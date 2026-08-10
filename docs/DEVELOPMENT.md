@@ -39,7 +39,7 @@ evidence, and creates the final reports.
 ```mermaid
 flowchart TD
     CLI["cli.py<br/>parse arguments, load tokens and OAuth files<br/>invalid input exits 2"]
-    INIT["Scanner.__init__<br/>two-user BOLA rule, then required OAuth keys<br/>invalid config raises before any request is sent"]
+    INIT["Scanner.__init__<br/>two-user BOLA rule, then required OAuth keys<br/>rejected before reports/ is created"]
     PARSE["OpenAPIParser<br/>base URL, parameters, request bodies,<br/>security schemes, local $ref"]
 
     subgraph PER ["per endpoint: method, path, parameters, security"]
@@ -94,11 +94,10 @@ Three behaviors the diagram makes explicit:
   An undeclared parameter is never probed.
 - No configuration error reaches the network: every validation above raises
   before the first request is sent.
-- Output-directory creation sits between the two validation groups
-  (`src/scanner.py:80-83`). The two-user BOLA rule runs before it and leaves no
-  `reports/` behind; the OAuth key check runs after it
-  (`src/scanner.py:111-121`), so a run rejected for missing OAuth keys does
-  leave an empty `reports/evidence/` directory.
+- All local validation runs before the output directory is created, so a
+  rejected run leaves no `reports/` behind. The user-count rule is checked
+  first, then the OAuth config shape, and only then is `ForensicLogger`
+  constructed.
 
 Detectors build their own authentication handlers through
 `build_auth_handler()`. `Scanner` resolves the OpenAPI security requirements
