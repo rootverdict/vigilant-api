@@ -1,5 +1,7 @@
 # Vigilant-API
 
+[![CI](https://github.com/rootverdict/vigilant-api/actions/workflows/ci.yml/badge.svg)](https://github.com/rootverdict/vigilant-api/actions/workflows/ci.yml)
+
 Vigilant-API is a black-box API security scanner for REST APIs. It reads an
 OpenAPI 3.x specification, authenticates as multiple users, and tests for
 logic-layer vulnerabilities that conventional payload scanners often miss.
