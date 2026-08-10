@@ -32,22 +32,78 @@ vigilant-api/
 
 ## Architecture
 
-```text
-cli.py
-└── Scanner
-    ├── OpenAPIParser
-    ├── AuthHandler
-    ├── BOLADetector
-    ├── SSRFDetector
-    ├── OAuthFlawDetector
-    ├── ForensicLogger
-    ├── ReportGenerator
-    └── RequestBudget
+`Scanner` parses the specification, resolves the security requirements of each
+operation, dispatches detectors, enforces the shared request budget, records
+evidence, and creates the final reports.
+
+```mermaid
+flowchart TD
+    CLI["cli.py<br/>parse arguments, load tokens and OAuth files<br/>invalid input exits 2"]
+    INIT["Scanner.__init__<br/>two-user BOLA rule, then required OAuth keys<br/>invalid config raises before any request is sent"]
+    PARSE["OpenAPIParser<br/>base URL, parameters, request bodies,<br/>security schemes, local $ref"]
+
+    subgraph PER ["per endpoint: method, path, parameters, security"]
+        direction TB
+        GATE{"requires auth and<br/>exposes a BOLA surface?"}
+        BOLA["BOLADetector<br/>differential access, parameter pollution,<br/>body IDOR, indirect reference, mass assignment"]
+        URLP{"spec declares a<br/>URL-valued parameter?"}
+        SSRF["SSRFDetector<br/>cloud metadata, filter bypass,<br/>non-HTTP schemes, blind callback"]
+    end
+
+    JWT["AuthHandler.check_jwt_algorithm<br/>every bearer and OAuth token<br/>suppressed only by --skip jwt"]
+    OAQ{"--oauth-config supplied<br/>and oauth not skipped?"}
+    OAUTH["OAuthFlawDetector<br/>state integrity, scope validation,<br/>code reuse, open redirect, token leakage"]
+    LOG["ForensicLogger<br/>deduplicates, writes one evidence file per finding"]
+    REPORT["ReportGenerator"]
+    OUT["reports/report.json<br/>reports/report.html<br/>reports/evidence/*.json"]
+    EXIT["exit 0 clean<br/>exit 1 CRITICAL or HIGH found<br/>exit 2 scan failed to complete"]
+    BUDGET["RequestBudget<br/>hard request cap shared by every detector"]
+
+    CLI -->|config dict| INIT
+    INIT --> PARSE
+    PARSE -->|endpoint list| GATE
+
+    GATE -->|yes| BOLA
+    GATE -->|no| URLP
+    BOLA --> URLP
+    URLP -->|yes| SSRF
+    URLP -->|no| JWT
+    SSRF --> JWT
+
+    JWT --> OAQ
+    OAQ -->|yes| OAUTH
+    OAQ -->|no| LOG
+    OAUTH --> LOG
+
+    LOG --> REPORT
+    REPORT --> OUT
+    OUT --> EXIT
+
+    BUDGET -.-> BOLA
+    BUDGET -.-> SSRF
+    BUDGET -.-> OAUTH
+    BOLA -.->|findings| LOG
+    SSRF -.->|findings| LOG
 ```
 
-`Scanner` parses the specification, prepares authentication, dispatches
-detectors, enforces the shared request budget, records evidence, and creates the
-final reports.
+Three behaviors the diagram makes explicit:
+
+- JWT algorithm checks are token-level, so they survive `--skip oauth`. Only
+  `--skip jwt` suppresses them.
+- SSRF probing depends on the specification declaring a URL-valued parameter.
+  An undeclared parameter is never probed.
+- No configuration error reaches the network: every validation above raises
+  before the first request is sent.
+- Output-directory creation sits between the two validation groups
+  (`src/scanner.py:80-83`). The two-user BOLA rule runs before it and leaves no
+  `reports/` behind; the OAuth key check runs after it
+  (`src/scanner.py:111-121`), so a run rejected for missing OAuth keys does
+  leave an empty `reports/evidence/` directory.
+
+Detectors build their own authentication handlers through
+`build_auth_handler()`. `Scanner` resolves the OpenAPI security requirements
+into `auth_scheme` options and passes them down rather than authenticating
+itself.
 
 ## Development setup
 
