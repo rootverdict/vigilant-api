@@ -254,10 +254,10 @@ Example CI step:
 
 ## Documentation
 
-- [Project Scope](docs/SCOPE.md) — what is delivered (V1) and what is planned (V2)
-- [Detector Reference](docs/DETECTORS.md) — checks, evidence, severity, and remediation
-- [Configuration and Usage](docs/CONFIGURATION.md) — authentication, OAuth, recipes, CI, and troubleshooting
-- [Development Guide](docs/DEVELOPMENT.md) — architecture, tests, mock endpoints, and extensions
+- [Project Scope](docs/SCOPE.md) - what is delivered (V1) and what is planned (V2)
+- [Detector Reference](docs/DETECTORS.md) - checks, evidence, severity, and remediation
+- [Configuration and Usage](docs/CONFIGURATION.md) - authentication, OAuth, recipes, CI, and troubleshooting
+- [Development Guide](docs/DEVELOPMENT.md) - architecture, tests, mock endpoints, and extensions
 
 ## Development
 
