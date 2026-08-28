@@ -50,8 +50,8 @@ are populated from OpenAPI examples or defaults.
 
 ### Body IDOR
 
-In active mode, POST and PUT requests are tested with another user's ID in
-common identity fields, including snake_case and camelCase forms such as
+In active mode, POST, PUT, and PATCH requests are tested with another user's ID
+in common identity fields, including snake_case and camelCase forms such as
 `user_id`, `account_id`, `owner_id`, `customer_id`, `resource_id`, `userId`,
 `accountId`, and `ownerId`.
 
