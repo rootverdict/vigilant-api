@@ -115,6 +115,19 @@ acceptable.
 If the package is installed in editable mode, `vigilant-api` can replace
 `python cli.py` in these commands.
 
+### 4. Run an automated triage scan
+
+Enable automated finding verification, false-positive filtering, and remediation code generation:
+
+```bash
+python cli.py \
+  --spec sample_specs/fintech.yaml \
+  --tokens sample_specs/tokens.json \
+  --ai
+```
+
+Each reported vulnerability is evaluated against recorded HTTP evidence, grading confidence and producing tailored framework code fixes directly in the HTML report.
+
 ## Authentication input
 
 Pass a JSON array of test identities to `--tokens`. A minimal bearer-token file
