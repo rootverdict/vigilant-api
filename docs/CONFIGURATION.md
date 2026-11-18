@@ -209,6 +209,21 @@ python cli.py --spec api.yaml --tokens tokens.json \
   --ids 1,2,3,10,50,99 --output my-reports
 ```
 
+### Automated Triage and Remediation Synthesis
+
+To enable automated analysis of findings, false-positive filtering, and tailored code fixes:
+
+```bash
+python cli.py --spec api.yaml --tokens tokens.json --ai
+```
+
+When enabled, each finding is analyzed against the recorded HTTP evidence and enriched with:
+- Verification status and confidence rating (`HIGH`, `MEDIUM`, `LOW`)
+- An executive risk briefing for non-technical stakeholders
+- A concrete, framework-specific code patch ready for remediation
+
+Ensure your analysis credentials (`GEMINI_API_KEY`) are set in your environment.
+
 ## Output
 
 The output directory contains:

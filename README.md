@@ -29,6 +29,7 @@ machine-readable JSON and human-readable HTML reports.
 | BOLA / IDOR | Differential access, parameter pollution, body IDOR, indirect references, mass assignment |
 | SSRF | Cloud metadata probes, filter bypasses, blind callbacks, non-HTTP protocols |
 | OAuth | State integrity, token leakage, scope validation, code reuse, open redirects |
+| Triage & Analysis | Automated evidence analysis, confidence grading, executive risk narrative, tailored code fixes |
 | Safety | Read-only default, explicit active mode, rate limiting, hard request budget |
 | Reporting | Per-finding evidence plus JSON and HTML summaries |
 | Integrations | Exit codes for CI/CD and optional intercepting-proxy support |
@@ -202,6 +203,7 @@ More examples are available in
 | `--active` | Enable write-method probes | Off |
 | `--max-requests INT` | Hard request cap | `1000` |
 | `--read-map WRITE=READ` | Pair a write endpoint with the GET that reads it back, for mass-assignment persistence checks; repeatable | Heuristic pairing |
+| `--ai` | Enable automated finding triage, confidence grading, and remediation code synthesis | Off |
 | `--version`, `-V` | Print the version | |
 
 ## Output
