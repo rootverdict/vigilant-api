@@ -91,7 +91,8 @@ def _validate_oauth_config(config) -> str | None:
 @click.option('--output',   default='reports', show_default=True,
               help='Directory for output reports')
 @click.option('--skip',     multiple=True,
-              type=click.Choice(['bola', 'ssrf', 'oauth', 'jwt'], case_sensitive=False),
+              type=click.Choice(['bola', 'ssrf', 'oauth', 'jwt', 'bfla', 'headers', 'bopla'],
+                                case_sensitive=False),
               help='Skip specific check types (can repeat: --skip bola --skip ssrf). '
                    'Use --skip jwt to suppress JWT algorithm checks independently of --skip oauth.')
 @click.option('--callback', default=None,

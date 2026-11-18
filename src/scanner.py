@@ -22,6 +22,9 @@ from logger         import ForensicLogger
 from reporter       import ReportGenerator
 from request_utils  import RequestBudget
 from ai_triage      import GeminiAITriage
+from bfla_detector  import BFLADetector
+from bopla_detector import BOPLADetector
+from headers_detector import HeadersDetector
 
 colorama_init(autoreset=True)
 
@@ -123,6 +126,13 @@ class Scanner:
             **det_opts,
         ) if len(users) >= 2 else None
         self.ssrf = SSRFDetector(config.get('callback_url'), **det_opts)
+        self.bfla = BFLADetector(base_url, budget=self.budget, delay=config.get('delay', 0.0),
+                                 verify=not config.get('insecure', False), proxy=config.get('proxy'),
+                                 active=self.active)
+        self.bopla = BOPLADetector()
+        self.headers_detector = HeadersDetector(base_url, budget=self.budget,
+                                                verify=not config.get('insecure', False),
+                                                proxy=config.get('proxy'))
 
         # OAuth detector is optional (only if oauth_config provided).
         # Shape and required keys were already validated above.
@@ -235,6 +245,30 @@ class Scanner:
                         fp = _log_unique(f)
                         if fp:
                             self._print_finding(f, fp)
+
+            # --- BFLA (Privileged / Admin Function Check) ---
+            if 'bfla' not in self.skip and self.bfla.is_privileged_endpoint(path):
+                findings = self.bfla.test_endpoint(
+                    method, path, self.config['users'],
+                    headers_builder=lambda u: dict(AuthHandler.from_user(u).get_session().headers),
+                )
+                for f in findings:
+                    fp = _log_unique(f)
+                    if fp:
+                        self._print_finding(f, fp)
+
+            # --- Security Headers & CORS ---
+            if 'headers' not in self.skip and method == 'GET':
+                first_user = self.config['users'][0] if self.config.get('users') else None
+                user_hdr = (
+                    dict(AuthHandler.from_user(first_user).get_session().headers)
+                    if first_user else None
+                )
+                findings = self.headers_detector.test_cors_and_headers(path, user_headers=user_hdr)
+                for f in findings:
+                    fp = _log_unique(f)
+                    if fp:
+                        self._print_finding(f, fp)
 
         # ── JWT algorithm checks ───────────────────────────────────────
         # Runs independently of --skip oauth: JWT header inspection applies to

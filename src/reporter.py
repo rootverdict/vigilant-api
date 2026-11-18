@@ -149,7 +149,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 {% endif %}
 
 <footer>
-  Vigilant-API v1.0 · rootverdict · Built as part of 32-Week AppSec Roadmap
+  Vigilant-API v1.0
 </footer>
 </body>
 </html>

@@ -18,6 +18,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+import time
 import urllib.error
 import urllib.request
 from typing import Any
@@ -47,7 +48,7 @@ class GeminiAITriage:
     """Performs intelligent triage on scanner findings via Google Gemini API."""
 
     DEFAULT_MODEL = "gemini-3.5-flash"
-    FALLBACK_MODELS = ["gemini-3.5-flash-lite", "gemini-flash-latest", "gemini-3.8-flash"]
+    FALLBACK_MODELS = ["gemini-3.5-flash-lite"]
 
     def __init__(self, api_key: str | None = None, model: str = DEFAULT_MODEL):
         if api_key is not None:
@@ -119,7 +120,12 @@ class GeminiAITriage:
             if verbose:
                 valid_str = "VALID" if analysis.get("is_valid") else "FALSE_POSITIVE"
                 conf = analysis.get("confidence")
-                chk = finding.get("check")
+                chk = (
+                    finding.get("check")
+                    or finding.get("vulnerability", {}).get("check")
+                    or finding.get("vulnerability", {}).get("name")
+                    or "Unknown Check"
+                )
                 reason = analysis.get("reasoning", "")[:70]
                 print(f"    - [{valid_str} | {conf}] {chk}: {reason}...")
 
@@ -161,42 +167,40 @@ Respond ONLY with a valid JSON object with the following schema:
         last_error = None
 
         for model_name in models_to_try:
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={self.api_key}"
-            payload = {
-                "contents": [
-                    {
-                        "parts": [{"text": prompt}]
-                    }
-                ],
-                "generationConfig": {
-                    "temperature": 0.1,
-                    "responseMimeType": "application/json",
+            for _attempt in range(2):
+                url = (
+                    f"https://generativelanguage.googleapis.com/v1beta/models/"
+                    f"{model_name}:generateContent?key={self.api_key}"
+                )
+                payload = {
+                    "contents": [{"parts": [{"text": prompt}]}],
+                    "generationConfig": {
+                        "temperature": 0.1,
+                        "responseMimeType": "application/json",
+                    },
                 }
-            }
 
-            data = json.dumps(payload).encode("utf-8")
-            req = urllib.request.Request(
-                url,
-                data=data,
-                headers={"Content-Type": "application/json"},
-                method="POST",
-            )
+                data = json.dumps(payload).encode("utf-8")
+                req = urllib.request.Request(
+                    url,
+                    data=data,
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
 
-            try:
-                with urllib.request.urlopen(req, timeout=30) as resp:
-                    resp_data = json.loads(resp.read().decode("utf-8"))
-                    candidates = resp_data.get("candidates", [])
-                    if candidates:
-                        parts = candidates[0].get("content", {}).get("parts", [])
-                        if parts:
-                            return parts[0].get("text", "")
-                    return ""
-            except urllib.error.HTTPError as e:
-                last_error = e
-                # Retry with next model if 404 or 503
-                if e.code in (404, 503, 429):
+                try:
+                    with urllib.request.urlopen(req, timeout=25) as resp:
+                        resp_data = json.loads(resp.read().decode("utf-8"))
+                        candidates = resp_data.get("candidates", [])
+                        if candidates:
+                            parts = candidates[0].get("content", {}).get("parts", [])
+                            if parts:
+                                return parts[0].get("text", "")
+                        return ""
+                except (urllib.error.HTTPError, TimeoutError, OSError) as e:
+                    last_error = e
+                    time.sleep(1.0)
                     continue
-                raise
 
         if last_error:
             raise last_error
