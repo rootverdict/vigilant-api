@@ -9,8 +9,11 @@ logic-layer vulnerabilities that conventional payload scanners often miss.
 It currently detects:
 
 - BOLA / IDOR authorization failures
+- Broken Function Level Authorization (BFLA) on administrative endpoints
+- Broken Object Property Level Authorization (BOPLA) & Excessive Data Exposure
 - Server-Side Request Forgery (SSRF)
 - OAuth 2.0 implementation flaws
+- Insecure CORS policies & missing transport security headers
 - Weak or unsafe JWT algorithm choices
 
 Each finding is recorded as forensic JSON evidence. A scan also produces
@@ -27,8 +30,11 @@ machine-readable JSON and human-readable HTML reports.
 | OpenAPI | YAML/JSON parsing, server variables, parameters, request bodies, security schemes, local `$ref` files |
 | Authentication | Bearer tokens, API keys, OAuth tokens, token refresh, password and client-credentials grants |
 | BOLA / IDOR | Differential access, parameter pollution, body IDOR, indirect references, mass assignment |
+| BFLA | Privilege escalation, unauthenticated access to admin, management, and internal endpoints |
+| BOPLA | Excessive data exposure, leaked sensitive properties (passwords, PII, tokens, internal role flags) |
 | SSRF | Cloud metadata probes, filter bypasses, blind callbacks, non-HTTP protocols |
 | OAuth | State integrity, token leakage, scope validation, code reuse, open redirects |
+| Security Headers | Insecure CORS policies (wildcard with credentials, arbitrary reflected origin), HSTS enforcement |
 | Triage & Analysis | Automated evidence analysis, confidence grading, executive risk narrative, tailored code fixes |
 | Safety | Read-only default, explicit active mode, rate limiting, hard request budget |
 | Reporting | Per-finding evidence plus JSON and HTML summaries |
@@ -193,7 +199,7 @@ More examples are available in
 | `--tokens PATH` | JSON file containing test identities | Required |
 | `--ids TEXT` | Comma-separated resource IDs | `1,2,3,4,5` |
 | `--output DIR` | Report output directory | `reports` |
-| `--skip TYPE` | Skip `bola`, `ssrf`, `oauth`, or `jwt`; repeatable | None |
+| `--skip TYPE` | Skip `bola`, `ssrf`, `oauth`, `jwt`, `bfla`, `headers`, or `bopla`; repeatable | None |
 | `--callback URL` | Blind SSRF callback URL | Blind checks disabled |
 | `--oauth-config PATH` | OAuth detector configuration | OAuth checks disabled |
 | `--delay FLOAT` | Seconds between requests | `0.0` |

@@ -178,6 +178,35 @@ An HS256 finding is not a confirmed vulnerability. Prefer asymmetric signing
 such as RS256 or ES256 for multi-service architectures, or protect HS256 with a
 strong, randomly generated secret.
 
+## BFLA (Broken Function Level Authorization)
+
+Identifies sensitive administrative, management, and internal endpoints and verifies that
+proper function-level access control is enforced:
+
+| Check | Technique | Severity |
+|---|---|---|
+| BFLA Unauthenticated Access | Probes administrative endpoints (`/admin/*`, `/manage/*`, `/internal/*`) without authentication | CRITICAL |
+| BFLA Privilege Escalation | Probes administrative endpoints with standard non-privileged user tokens | HIGH |
+
+## BOPLA (Broken Object Property Level Authorization)
+
+Inspects response bodies for excessive data exposure and leaked secrets:
+
+| Check | Technique | Severity |
+|---|---|---|
+| BOPLA Sensitive Property Leak | Scans JSON responses for sensitive internal attributes (`password_hash`, `ssn`, `role`, `is_admin`, `secret_key`) | HIGH |
+| Hardcoded Secret Exposure | Scans raw responses for pattern matches against live credentials (AWS keys, GitHub tokens, private keys) | CRITICAL |
+
+## Security Headers & CORS
+
+Audits transport-layer configurations and cross-origin policies:
+
+| Check | Technique | Severity |
+|---|---|---|
+| Arbitrary Reflected Origin | Probes with an untrusted `Origin` header to detect reflected origins with credentials enabled | CRITICAL |
+| Wildcard CORS with Credentials | Detects `Access-Control-Allow-Origin: *` combined with `Access-Control-Allow-Credentials: true` | HIGH |
+| Missing Security Header | Detects absence of HSTS (`Strict-Transport-Security`) on TLS endpoints | LOW |
+
 ## Severity model
 
 | Severity | Meaning | Example |
