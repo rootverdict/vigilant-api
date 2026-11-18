@@ -21,6 +21,7 @@ from oauth_detector import OAuthFlawDetector
 from logger         import ForensicLogger
 from reporter       import ReportGenerator
 from request_utils  import RequestBudget
+from ai_triage      import GeminiAITriage
 
 colorama_init(autoreset=True)
 
@@ -52,6 +53,8 @@ class Scanner:
         self.skip         = set(config.get('skip', []))
         self.verbose      = config.get('verbose', False)
         self.active       = config.get('active', False)
+        self.ai_triage_enabled = config.get('ai_triage', False)
+        self.ai_triage    = GeminiAITriage() if self.ai_triage_enabled else None
         self.budget       = RequestBudget(config.get('max_requests', 1000))
 
         base_url = self.parser.get_base_url()
@@ -270,6 +273,12 @@ class Scanner:
         meta['budget_exhausted'] = self.budget.exhausted
 
         all_findings = self.logger.sorted_findings()
+
+        # ── AI Triage (Gemini) ────────────────────────────────────────
+        if self.ai_triage and self.ai_triage.is_available:
+            print(f'\n{Fore.CYAN}[*] Running AI Triage on findings with Gemini...{Style.RESET_ALL}')
+            self.ai_triage.triage_findings(all_findings, verbose=True)
+
         summary      = self.logger.get_summary()
 
         json_path = self.reporter.generate_json(all_findings, meta)

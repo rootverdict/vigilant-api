@@ -116,8 +116,10 @@ def _validate_oauth_config(config) -> str | None:
                    'mass-assignment persistence checks (repeatable). '
                    'e.g. --read-map /account/update=/account/{id}. '
                    'Overrides the automatic heuristic pairing for that path.')
+@click.option('--ai', 'ai_triage', is_flag=True, default=False,
+              help='Enable AI triage using Gemini for false-positive filtering and code fix generation')
 def main(spec, tokens, ids, output, skip, callback, oauth_config_file,
-         delay, insecure, proxy, verbose, active, max_requests, read_map):
+         delay, insecure, proxy, verbose, active, max_requests, read_map, ai_triage):
     """
     \b
     Vigilant-API v1.0 - API Security Scanner
@@ -223,6 +225,7 @@ def main(spec, tokens, ids, output, skip, callback, oauth_config_file,
         'active':       active,
         'max_requests': max_requests,
         'read_endpoint_map': read_endpoint_map or None,
+        'ai_triage':    ai_triage,
     }
 
     if active:

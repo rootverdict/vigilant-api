@@ -55,6 +55,13 @@ HTML_TEMPLATE = """<!DOCTYPE html>
           padding: 2px 6px; border-radius: 4px; }
   .remediation { font-size: 0.85rem; color: #a0aec0; border-left: 3px solid #3182ce;
                  padding-left: 12px; margin-top: 6px; }
+  .ai-box { background: #1a365d; border-left: 3px solid #63b3ed; padding: 10px 14px;
+            border-radius: 4px; margin-top: 8px; font-size: 0.85rem; color: #e2e8f0; }
+  .ai-badge { display: inline-block; padding: 1px 8px; border-radius: 9999px;
+              font-size: 0.7rem; font-weight: 700; background: #2b6cb0; color: #bee3f8; }
+  .ai-code { display: block; margin-top: 6px; padding: 8px; background: #0f172a;
+             border-radius: 4px; font-family: monospace; font-size: 0.8rem;
+             white-space: pre-wrap; color: #94a3b8; }
   a { color: #63b3ed; text-decoration: none; }
   a:hover { text-decoration: underline; }
   footer { margin-top: 40px; text-align: center; color: #4a5568; font-size: 0.8rem; }
@@ -105,6 +112,30 @@ HTML_TEMPLATE = """<!DOCTYPE html>
           <div><small>Response:</small> <span class="code">{{ f.evidence.body_preview[:120] }}</span></div>
         {% endif %}
         <p class="remediation">{{ f.remediation }}</p>
+        {% if f.ai_analysis %}
+          <div class="ai-box">
+            <div>
+              <span class="ai-badge">AI Confidence: {{ f.ai_analysis.confidence }}</span>
+              {% if not f.ai_analysis.is_valid %}
+                <span class="badge badge-LOW">Likely False Positive</span>
+              {% endif %}
+            </div>
+            {% if f.ai_analysis.executive_summary %}
+              <div style="margin-top: 4px; font-weight: 600;">
+                {{ f.ai_analysis.executive_summary }}
+              </div>
+            {% endif %}
+            <div style="margin-top: 4px; font-size: 0.8rem; color: #cbd5e1;">
+              {{ f.ai_analysis.reasoning }}
+            </div>
+            {% if f.ai_analysis.suggested_code_fix %}
+              <div style="margin-top: 6px; font-size: 0.75rem; color: #93c5fd; font-weight: 600;">
+                Suggested Fix:
+              </div>
+              <code class="ai-code">{{ f.ai_analysis.suggested_code_fix }}</code>
+            {% endif %}
+          </div>
+        {% endif %}
         {% if f._evidence_href %}
           <a href="{{ f._evidence_href }}">📄 Full Evidence</a>
         {% endif %}
